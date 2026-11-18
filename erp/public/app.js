@@ -235,7 +235,7 @@ function closeTable() {
 }
 function sales(){
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos"><section class="catalog"><h1>Nova venda</h1><input id="search" type="search" placeholder="Buscar produto ou ler código de barras" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Buscar produto ou ler código de barras" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
   <aside class="order"><h2>Pedido atual</h2><div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${p.qty}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
@@ -349,11 +349,11 @@ function movementTotal(shift, kind) {
 function drawerBalance(state) {
   const shift=state.cash;
   const sales=state.sales.filter(s=>s.shift===shift.id);
-  return shift.initial+tenderTotal(sales,'Dinheiro')+movementTotal(shift,'Suprimento')-movementTotal(shift,'Sangria');
+  return shift.initial+tenderTotal(shift.collections||[],'Dinheiro')+tenderTotal(sales,'Dinheiro')+movementTotal(shift,'Suprimento')-movementTotal(shift,'Sangria');
 }
 function functionMenu() {
   dialog.innerHTML='<h2 id="function-title">Funções do caixa</h2><div class="function-table">'+
-    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],['X','<button data-remove-shortcut>Retirar item do pedido</button>'],...cashFunctions.map(f=>[f.key,
+    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],['F8','<button data-collect>Receber fiado</button>'],['X','<button data-remove-shortcut>Retirar item do pedido</button>'],...cashFunctions.map(f=>[f.key,
       '<button type="button" data-function="'+f.key+'"><strong>'+f.name+'</strong><br>'+f.description+'</button>'])])+
     '</div><div class="actions"><button type="button" id="cancel">Voltar</button></div>';
   dialog.querySelector('#cancel').onclick=()=>dialog.close();
@@ -400,6 +400,7 @@ document.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='x' && !e.target.closest('input,textarea,select,[contenteditable="true"]')){
     e.preventDefault();if(menuOpen)dialog.close();removeItem();return;
   }
+  if(e.key==='F8'){e.preventDefault();if(menuOpen)dialog.close();receiveCredit();return;}
   const fn=cashFunctions.find(f=>f.key===e.key);
   if (e.key==='F2' || fn) {
     e.preventDefault();
@@ -419,6 +420,7 @@ function cash(){
   const expected=drawerBalance(data);
   fields('Fechar caixa',`<p>Abertura em ${stamp(shift.opened)}</p><p>Fundo inicial <strong>${money(shift.initial)}</strong></p>
   ${[...methods,...(tenderTotal(sales,'Cartão')?['Cartão']:[])].map(m=>`<p>${m} <strong>${money(tenderTotal(sales,m))}</strong></p>`).join('')}
+  ${shift.collections?.length?'<h3>Recebimentos de fiado</h3>'+splitMethods.filter(m=>tenderTotal(shift.collections,m)>0).map(m=>'<p>'+m+' <strong>'+money(tenderTotal(shift.collections,m))+'</strong></p>').join(''):''}
   <p>Suprimentos <strong>${money(movementTotal(shift,'Suprimento'))}</strong></p>
   <p>Sangrias <strong>${money(movementTotal(shift,'Sangria'))}</strong></p>
   <p>Dinheiro esperado <strong>${money(expected)}</strong></p>${amount('Dinheiro contado','counted')}`,async v=>{
@@ -486,7 +488,7 @@ function editUser(login){
 }
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico',...(session?.admin?staffTabs:[])];
-  const totals=k=>sum(data.bills.filter(b=>b.kind===k&&!b.paid),'amount');
+  const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
   let content='';
   if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
@@ -500,10 +502,10 @@ function back(){
     if(tab==='products'){
       content+=table(['Produto','Categoria','Preço',''],data.products.map(p=>[esc(p.name),esc(p.category),money(p.price),edit(tab,p.id)]));
     } else if(data[tab]){
-      content+=table(['Nome','Documento','Contato','Limite','Em aberto',''],data[tab].map(p=>[esc(p.name),esc(p.doc),esc(p.contact),money(p.limit),money(sum(data.bills.filter(b=>!b.paid&&b.party===p.id),'amount')),edit(tab,p.id)]));
+      content+=table(['Nome','Documento','Contato','Limite','Em aberto',''],data[tab].map(p=>[esc(p.name),esc(p.doc),esc(p.contact),money(p.limit),money(data.bills.filter(b=>!b.paid&&b.party===p.id).reduce((n,b)=>n+creditRules.remaining(b),0)),edit(tab,p.id)]));
     } else {
-      content=`<p>Em aberto <strong>${money(sum(data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)&&!b.paid),'amount'))}</strong></p>`+content;
-      content+=table(['Descrição','Cliente / fornecedor','Vencimento','Valor','Situação',''],data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)).map(b=>[esc(b.description),esc(partyName(b)),esc(b.due.split('-').reverse().join('/')),money(b.amount),b.paid?'Liquidado em '+stamp(b.paid)+(b.payments||[]).map(p=>'<br>'+esc(p.method)+' '+money(p.amount)).join(''):'Em aberto',b.paid?'':edit(billKind,b.id)+` <button data-settle="${b.id}">${billKind==='pagar'?'Dar baixa no pagamento':'Dar baixa no recebimento'}</button>`]));
+      content=`<p>Em aberto <strong>${money(data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0))}</strong></p>`+content;
+      content+=table(['Descrição','Cliente / fornecedor','Vencimento','Valor','Situação',''],data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)).map(b=>[esc(b.description),esc(partyName(b)),esc(b.due.split('-').reverse().join('/')),money(b.amount),b.paid?'Liquidado em '+stamp(b.paid)+(b.payments||[]).map(p=>'<br>'+esc(p.method)+' '+money(p.amount)).join(''):b.receipts?.length?'Parcial · saldo '+money(creditRules.remaining(b)):'Em aberto',b.paid?'':(b.receipts?.length?'':edit(billKind,b.id))+` <button data-settle="${b.id}">${billKind==='pagar'?'Dar baixa no pagamento':'Dar baixa no recebimento'}</button>`]));
     }
   }
   app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="panel">${content}</div></section>`;
@@ -531,7 +533,7 @@ function record(key,id,billCategory){
     if(isBill){
       v.amount=cents(v.amount);v.kind=key;
       const limit=parties.find(p=>p.id===v.party)?.limit||0;
-      const open=sum(data.bills.filter(b=>b.id!==id&&b.party===v.party&&b.kind===key&&!b.paid),'amount');
+      const open=data.bills.filter(b=>b.id!==id&&b.party===v.party&&b.kind===key&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
       if(key==='receber'&&open+v.amount>limit)throw new Error('O lançamento excede o limite de crédito disponível.');
     } else if(key==='products'){
       v.barcode=v.barcode.trim();
@@ -540,7 +542,7 @@ function record(key,id,billCategory){
     } else {
       if(key==='customers') v.cycleDay=v.cycle==='manual'?null:Number(v.cycleDay);
       v.limit=cents(v.limit);
-      if(v.limit<sum(data.bills.filter(b=>b.party===id&&!b.paid),'amount'))throw new Error('O limite é menor que o saldo em aberto.');
+      if(v.limit<data.bills.filter(b=>b.party===id&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0))throw new Error('O limite é menor que o saldo em aberto.');
     }
     await save(next=>{
       const index=next[list].findIndex(r=>r.id===id);
@@ -558,8 +560,64 @@ function record(key,id,billCategory){
     cycle.onchange=refresh;refresh();
   }
 }
+function receiveCredit(id){
+  const shift=data.cash;
+  if(!shift){notice('Abra o caixa para receber fiado.');cash();return;}
+  const bills=data.bills.filter(b=>b.kind==='receber' && creditRules.remaining(b)>0 && (!id || b.id===id))
+    .sort((a,b)=>a.due.localeCompare(b.due));
+  if(!bills.length){notice('Nenhuma conta a receber em aberto.');return;}
+  const groups=id?[[bills[0].party,partyName(bills[0])||'Cliente']]:data.customers.filter(c=>bills.some(b=>b.party===c.id)).map(c=>[c.id,c.name]);
+  if(!groups.length){notice('Nenhum cliente cadastrado com saldo em aberto.');return;}
+  const accounts=(list,party)=>list.filter(b=>b.kind==='receber' && b.party===party && (!id || b.id===id) && creditRules.remaining(b)>0)
+    .sort((a,b)=>a.due.localeCompare(b.due)||a.id.localeCompare(b.id));
+  const balance=list=>list.reduce((n,b)=>n+creditRules.remaining(b),0);
+  const options=groups.map(([key,name])=>[key,name+' · '+money(balance(accounts(bills,key)))]);
+  fields('Receber fiado',select('Cliente','party',options,options[0][0])+
+    '<p id="credit-bills"></p>'+amount('Valor a receber (R$)','amount','','.01')+
+    paymentChoices(splitMethods)+'<div id="payment-extra"></div><p id="credit-remaining"></p>',async v=>{
+    const shown=accounts(bills,v.party), value=cents(v.amount);
+    if(!Number.isSafeInteger(value) || value<=0 || value>balance(shown)) throw Error('Informe um valor entre R$ 0,01 e o saldo do cliente.');
+    const payments=tenderParts(v,value);
+    await save(next=>{
+      checkShift(next,shift);
+      const current=accounts(next.bills,v.party);
+      if(current.length!==shown.length || current.some((b,i)=>b.id!==shown[i].id || b.due!==shown[i].due || creditRules.remaining(b)!==creditRules.remaining(shown[i])))
+        throw review('As contas do cliente mudaram. Confira o saldo antes de receber.');
+      const receipt={id:operationId,time:date(),total:value,payments,shift:shift.id,operator:session.login,party:v.party};
+      const parts=payments.map(p=>({...p}));
+      let left=value;
+      for(const bill of current){
+        if(!left)break;
+        const portion=Math.min(left,creditRules.remaining(bill)), allocated=[];
+        let needed=portion;
+        for(const part of parts){
+          const take=Math.min(needed,part.amount);
+          if(take){allocated.push({method:part.method,amount:take});part.amount-=take;needed-=take;}
+        }
+        (bill.receipts??=[]).push({...receipt,total:portion,payments:allocated});
+        bill.payments=bill.receipts.flatMap(r=>r.payments);
+        if(!creditRules.remaining(bill))bill.paid=receipt.time;
+        left-=portion;
+      }
+      (next.cash.collections??=[]).push(receipt);
+    },true);
+    notice('Recebido '+money(value)+'. Saldo do cliente: '+money(balance(data.bills.filter(b=>b.kind==='receber' && b.party===v.party)))+'.');
+  },'Confirmar recebimento');
+  bindSplitFields();
+  const picker=dialog.querySelector('[name=party]'), field=dialog.querySelector('[name=amount]');
+  const selected=()=>accounts(bills,picker.value);
+  const preview=()=>{$('#credit-remaining').textContent='Saldo após receber: '+money(Math.max(0,balance(selected())-(cents(field.value)||0)));};
+  picker.onchange=()=>{
+    const list=selected();
+    field.max=field.value=(balance(list)/100).toFixed(2);
+    $('#credit-bills').textContent=list.map(b=>b.due.split('-').reverse().join('/')+' · '+money(creditRules.remaining(b))).join(' | ');
+    preview();
+  };
+  field.oninput=preview;picker.onchange();
+}
 function settleBill(id){
   const bill=data.bills.find(b=>b.id===id);
+  if(bill.kind==='receber'){receiveCredit(id);return;}
   fields('Liquidar conta','<p>'+esc(bill.description)+' · '+money(bill.amount)+'</p>'+
     paymentChoices(splitMethods)+'<div id="payment-extra"></div>',async v=>{
     const payments=tenderParts(v,bill.amount);
@@ -626,6 +684,7 @@ document.addEventListener('click',e=>{
     }
     view=d.view;if(view==='sales')selectedTable=null;render();
   }
+  if(d.collect!==undefined){if(dialog.open)dialog.close();receiveCredit();return;}
   if(d.table)openTable(d.table);
   if(d.tableReceive!==undefined)receiveTable();
   if(d.tableClose!==undefined)closeTable();

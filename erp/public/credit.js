@@ -17,10 +17,14 @@ const creditRules = (() => {
     }
     return date.toISOString().slice(0,10);
   }
+  function remaining(bill) {
+    if(bill.paid) return 0;
+    return bill.amount-(bill.receipts||[]).reduce((n,r)=>n+r.total,0);
+  }
   function status(state,customer,day=today()) {
     const bills=state.bills.filter(b=>b.kind==='receber' && b.party===customer.id && !b.paid);
     const overdue=bills.filter(b=>b.due<day).sort((a,b)=>a.due.localeCompare(b.due))[0];
-    return {available:customer.limit-bills.reduce((n,b)=>n+b.amount,0),overdue};
+    return {available:customer.limit-bills.reduce((n,b)=>n+remaining(b),0),overdue};
   }
   function check(state,customer,total,due,day=today()) {
     if(!customer) throw Error('Selecione um cliente cadastrado.');
@@ -31,6 +35,6 @@ const creditRules = (() => {
     if(!/^\d{4}-\d{2}-\d{2}$/.test(due) || due<day || (agreed && agreed!==due))
       throw Error('Confira o vencimento conforme o acerto do cliente.');
   }
-  return {today,nextDue,status,check};
+  return {today,nextDue,status,check,remaining};
 })();
 if(typeof module!=='undefined') module.exports=creditRules;
