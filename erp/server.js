@@ -312,7 +312,9 @@ initial.tables = Array.from({length:10}, (_,i)=>({id:String(i+1),name:'',opened:
 initial.closedTables=[];
 let state = fs.existsSync(database) ? JSON.parse(fs.readFileSync(database, 'utf8')) : initial;
 const staff=require('./staff')(pool,folder);
+const creditRules=require('./public/credit');
 const files = {
+  '/credit.js':['credit.js','text/javascript'],
   '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']
 };
 const server = http.createServer(async (req, res) => {
@@ -366,6 +368,19 @@ const server = http.createServer(async (req, res) => {
       if (!pool && next.rev !== state.rev) return reply(409, { error: 'Os dados mudaram em outra tela. Atualize a página.' });
       if (!['shifts','sales','customers','suppliers','bills','products'].every(key => Array.isArray(next[key])))
         return reply(400, { error: 'Dados inválidos.' });
+      // Requests from older tills also pass the same credit checks before the revision-guarded write.
+      const current=pool?(await pool.query('SELECT payload FROM casa_rosa_state WHERE id=1')).rows[0].payload:state;
+      if(current.rev!==next.rev) return reply(409,{error:'O caixa foi atualizado em outro aparelho.'});
+      const existing=new Set(current.sales.map(s=>s.id));
+      const checked={...current,bills:[...current.bills]};
+      for(const sale of next.sales){
+        if(sale.method!=='A prazo' || existing.has(sale.id)) continue;
+        const bill=next.bills.find(b=>b.kind==='receber' && b.description==='Venda '+sale.id.slice(0,8) && (b.saleId===sale.id || !b.saleId) && !current.bills.some(old=>old.id===b.id));
+        if(!bill || bill.amount!==sale.total || bill.due!==sale.due) return reply(400,{error:'Confira a conta a receber desta venda.'});
+        try {creditRules.check(checked,current.customers.find(c=>c.id===bill.party),sale.total,bill.due);}
+        catch(error){return reply(400,{error:error.message});}
+        checked.bills.push(bill);
+      }
       const previousRev = next.rev;
       next.rev++;
       if (pool) {

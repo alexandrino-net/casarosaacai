@@ -303,21 +303,12 @@ function payment(method){
     const payments=v.method==='Dividido'?splitPayment(v,total):undefined;
     const given=v.given?cents(v.given):total;
     if(v.method==='Dinheiro'&&given<total)throw new Error('O valor recebido é menor que o total.');
-    if(v.method==='A prazo'){
-      if(!customer)throw new Error('Cadastre e selecione um cliente.');
-      const pending=sum(data.bills.filter(b=>b.party===customer.id&&b.kind==='receber'&&!b.paid),'amount');
-      if(pending+total>customer.limit)throw new Error('A venda excede o limite de crédito do cliente.');
-    }
     await save(next=>{
       checkShift(next,shift);
-      if (v.method==='A prazo') {
-        const limit=next.customers.find(c=>c.id===customer.id)?.limit;
-        const pending=sum(next.bills.filter(b=>b.party===customer.id&&b.kind==='receber'&&!b.paid),'amount');
-        if (limit==null || pending+total>limit) throw review('O limite disponível mudou. Confira o cadastro do cliente.');
-      }
+      if(v.method==='A prazo') creditRules.check(next,next.customers.find(c=>c.id===v.customer),total,v.due);
       const id=operationId;
-      next.sales.push({id,shift:next.cash.id,time:date(),items,total,fee,payments,due:v.due,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
-      if(v.method==='A prazo')next.bills.push({id:crypto.randomUUID(),kind:'receber',party:customer.id,description:'Venda '+id.slice(0,8),amount:total,due:v.due,paid:null});
+      next.sales.push({id,shift:next.cash.id,time:date(),items,total,fee,payments,customerId:customer?.id,due:v.due,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
+      if(v.method==='A prazo')next.bills.push({id:crypto.randomUUID(),kind:'receber',saleId:id,party:customer.id,description:'Venda '+id.slice(0,8),amount:total,due:v.due,paid:null});
     },true);
     cart={};counterService=false;
     notice(v.method==='Dinheiro'?'Venda registrada. Troco '+money(given-total):'Venda registrada.');
@@ -326,7 +317,19 @@ function payment(method){
   const sync=()=>{
     const type=dialog.querySelector('[name=method]').value;
     $('#payment-extra').innerHTML=type==='Dividido'?splitFields():type==='Dinheiro'?amount('Valor recebido','given',(total/100).toFixed(2),'.01')+
-      '<p id="change"></p>':type==='A prazo'?select('Cliente','customer',customerOptions,'')+input('Vencimento','due','','date'):'';
+      '<p id="change"></p>':type==='A prazo'?select('Cliente','customer',customerOptions,'')+input('Vencimento','due','','date')+'<p id="credit-status" role="status"></p>':'';
+    if(type==='A prazo'){
+      const picker=dialog.querySelector('[name=customer]'), due=dialog.querySelector('[name=due]');
+      due.min=creditRules.today();
+      picker.onchange=()=>{
+        const customer=data.customers.find(c=>c.id===picker.value);
+        const agreed=creditRules.nextDue(customer);
+        due.readOnly=Boolean(agreed);due.value=agreed;
+        if(!customer){$('#credit-status').textContent='';return;}
+        const {available,overdue}=creditRules.status(data,customer);
+        $('#credit-status').textContent=overdue?'Crédito bloqueado · conta vencida em '+overdue.due.split('-').reverse().join('/'):'Disponível para compra: '+money(available);
+      };
+    }
     const received=dialog.querySelector('[name=given]');
     if(received){
       const update=()=>$('#change').textContent='Troco '+money(Math.max(0,cents(received.value)-total));
@@ -519,6 +522,8 @@ function record(key,id,billCategory){
   } else {
     html=input('Nome','name',old?.name)+input('CPF / CNPJ','doc',old?.doc,'text','')+input('Telefone ou e-mail','contact',old?.contact,'text','')+amount('Limite de crédito','limit',old?old.limit/100:'0');
   }
+  const weekdays=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+  if(key==='customers') html+=select('Rotina de pagamento','cycle',[['manual','Data combinada por compra'],['weekly','Semanal'],['monthly','Mensal']],old?.cycle||'manual')+'<div id="cycle-day"></div>';
   fields(names[key],html,async v=>{
     for(const key of ['name','description']){
       if(key in v){v[key]=v[key].trim();if(!v[key])throw new Error('Preencha o campo obrigatório.');}
@@ -533,6 +538,7 @@ function record(key,id,billCategory){
       if(v.barcode && data.products.some(p=>p.id!==id && p.barcode===v.barcode)) throw Error('Código de barras já cadastrado.');
       v.price=cents(v.price);v.image=v.image===''?null:Number(v.image);
     } else {
+      if(key==='customers') v.cycleDay=v.cycle==='manual'?null:Number(v.cycleDay);
       v.limit=cents(v.limit);
       if(v.limit<sum(data.bills.filter(b=>b.party===id&&!b.paid),'amount'))throw new Error('O limite é menor que o saldo em aberto.');
     }
@@ -543,6 +549,14 @@ function record(key,id,billCategory){
     });
     notice('Cadastro salvo.');
   });
+  if(key==='customers'){
+    const cycle=dialog.querySelector('[name=cycle]');
+    const refresh=()=>{
+      const options=cycle.value==='weekly'?weekdays.map((name,i)=>[String(i),name]):Array.from({length:31},(_,i)=>[String(i+1),String(i+1)]);
+      $('#cycle-day').innerHTML=cycle.value==='manual'?'':select('Dia do acerto','cycleDay',options,cycle.value===old?.cycle?String(old.cycleDay):'1');
+    };
+    cycle.onchange=refresh;refresh();
+  }
 }
 function settleBill(id){
   const bill=data.bills.find(b=>b.id===id);
