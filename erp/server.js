@@ -311,33 +311,36 @@ initial.company = {name: "Casa Rosa Açaí"};
 initial.tables = Array.from({length:10}, (_,i)=>({id:String(i+1),name:'',opened:null,items:[],payments:[]}));
 initial.closedTables=[];
 let state = fs.existsSync(database) ? JSON.parse(fs.readFileSync(database, 'utf8')) : initial;
-function equal(a, b) {
-  const hash = value => crypto.createHash('sha256').update(value).digest();
-  return crypto.timingSafeEqual(hash(a), hash(b));
-}
+const staff=require('./staff')(pool,folder);
 const files = {
   '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']
 };
 const server = http.createServer(async (req, res) => {
-  if (online) {
-    const header = req.headers.authorization || '';
-    const credentials = header.startsWith('Basic ')
-      ? Buffer.from(header.slice(6), 'base64').toString('utf8') : '';
-    const separator = credentials.indexOf(':');
-    const valid = separator >= 0
-      && equal(credentials.slice(0, separator), process.env.CASA_ROSA_USUARIO || 'sara')
-      && equal(credentials.slice(separator + 1), process.env.CASA_ROSA_SENHA);
-    if (!valid) {
-      res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Casa Rosa", charset="UTF-8"',
-        'Cache-Control': 'no-store' });
-      return res.end('Entre com seu usuario e senha.');
-    }
+  let actor;
+  try {actor=await staff.authenticate(req.headers.authorization);}
+  catch {res.writeHead(503);return res.end('Banco indisponível.');}
+  if (!actor) {
+    res.writeHead(401,{'WWW-Authenticate':'Basic realm="Casa Rosa", charset="UTF-8"','Cache-Control':'no-store'});
+    return res.end('Entre com seu usuário e senha.');
   }
   const reply = (status, value) => {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(value));
   };
   const url = req.url.split('?')[0];
+  if(url==='/api/sessao') return reply(200,actor);
+  if(url==='/api/equipe') {
+    if(!actor.admin) return reply(403,{error:'Acesso exclusivo da administração.'});
+    try {
+      if(req.method==='GET') return reply(200,await staff.listing());
+      if(req.method!=='POST') return reply(405,{error:'Método inválido.'});
+      if(req.headers['content-type']!=='application/json' || (req.headers.origin && req.headers.origin!==(process.env.PUBLIC_ORIGIN || 'http://'+req.headers.host)))
+        return reply(403,{error:'Origem inválida.'});
+      let body='';
+      for await(const chunk of req){body+=chunk;if(body.length>8192)return reply(413,{error:'Pedido muito grande.'});}
+      return reply(200,await staff.change(JSON.parse(body),actor));
+    } catch(e){return reply(e.status||500,{error:e.status?e.message:'Não foi possível concluir a operação.'});}
+  }
   if (url === '/api/dados') {
     if (req.method === 'GET') {
       if (pool) {
@@ -387,6 +390,7 @@ const server = http.createServer(async (req, res) => {
   fs.createReadStream(path.join(__dirname, 'public', asset[0])).pipe(res);
 });
 async function start() {
+await staff.init();
 if (!online && applyMenu(state)) fs.writeFileSync(database, JSON.stringify(state));
 if (online) {
   if (!process.env.CASA_ROSA_SENHA || !process.env.PUBLIC_ORIGIN)

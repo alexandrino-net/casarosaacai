@@ -432,11 +432,61 @@ const names={fixos:'Custos fixos',impostos:'Impostos',customers:'Clientes',suppl
 const table=(headers,rows)=>rows.length?`<div class="table"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<p>Nenhum registro.</p>';
 const edit=(key,id)=>`<button data-edit="${key}" data-id="${id}">Editar</button>`;
 const partyName=b=>(b.kind==='pagar'?data.suppliers:data.customers).find(p=>p.id===b.party)?.name||'';
+let session, staffData, selectedEmployee;
+async function staffRequest(command) {
+  const options=command?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...command,id:operationId})}:{cache:'no-store'};
+  const response=await fetch('/api/equipe',options);
+  const result=await response.json();
+  if(!response.ok) throw Error(result.error);
+  staffData=result;
+}
+const staffTabs=['Funcionários e vales','Usuários'];
+const outstanding=e=>e.entries.reduce((n,m)=>n+(m.kind==='vale'?m.amount:-m.amount),0);
+function staffPanel(){
+  if(!staffData)return '<p>Carregando cadastros…</p>';
+  if(tab==='Usuários')return '<button data-user="">Novo usuário</button>'+
+    table(['Nome','Login','Acesso à equipe','Situação',''],staffData.users.map(u=>[esc(u.name),esc(u.login),u.admin?'Administrador':'Operador',u.active?'Ativo':'Inativo','<button data-user="'+esc(u.login)+'">Editar</button>']));
+  const employees=staffData.employees;
+  const rows=employees.map(e=>[esc(e.name),esc(e.role),money(e.limit),money(outstanding(e)),money(e.limit-outstanding(e)),
+    '<button data-employee="'+esc(e.id)+'">Editar</button> <button data-statement="'+esc(e.id)+'">Vales e extrato</button>']);
+  let html='<button data-employee="">Novo funcionário</button>'+table(['Nome','Função','Limite','Em aberto','Disponível',''],rows);
+  const e=employees.find(e=>e.id===selectedEmployee);
+  if(e)html+='<h2>Vales · '+esc(e.name)+'</h2><p>Em aberto '+money(outstanding(e))+' · Disponível '+money(e.limit-outstanding(e))+'</p>'+
+    '<button data-entry="vale">Lançar vale</button> <button data-entry="baixa">Registrar baixa</button>'+
+    table(['Data','Movimento','Valor','Motivo','Registrado por'],[...e.entries].reverse().map(m=>[stamp(m.time),m.kind==='vale'?'Vale':'Baixa',money(m.amount),esc(m.note),esc(m.operator)]));
+  return html;
+}
+function editEmployee(id){
+  const e=staffData.employees.find(e=>e.id===id);
+  fields(e?'Editar funcionário':'Novo funcionário',input('Nome','name',e?.name)+input('Função','role',e?.role,'text','maxlength="80"')+
+    amount('Limite de vales em aberto (R$)','limit',e?(e.limit/100).toFixed(2):'0'),async v=>{
+      await staffRequest({action:'employee',employee:id,...v,limit:cents(v.limit)});
+      selectedEmployee=id||operationId;
+    });
+}
+function employeeEntry(kind){
+  const e=staffData.employees.find(e=>e.id===selectedEmployee);
+  fields((kind==='vale'?'Lançar vale · ':'Registrar baixa · ')+esc(e.name),
+    '<p>Em aberto '+money(outstanding(e))+' · Disponível '+money(e.limit-outstanding(e))+'</p>'+
+    amount('Valor (R$)','amount','','.01')+input('Motivo ou referência','note','','text','required maxlength="160"'),async v=>{
+      await staffRequest({action:kind,employee:e.id,amount:cents(v.amount),note:v.note});
+    });
+}
+function editUser(login){
+  const u=staffData.users.find(u=>u.login===login);
+  fields(u?'Editar usuário':'Novo usuário',input('Nome','name',u?.name)+input('Login','login',login,'text',u?'readonly':'required maxlength="64"')+
+    input(u?'Nova senha (opcional)':'Senha','password','','password',(u?'':'required ')+'minlength="10" maxlength="256" autocomplete="new-password"')+
+    select('Acesso aos cadastros de equipe e vales','profile',[['operator','Operador'],['admin','Administrador']],u?.admin?'admin':'operator')+
+    select('Situação','status',[['active','Ativo'],['inactive','Inativo']],u?.active===false?'inactive':'active'),async v=>{
+      await staffRequest({action:'user',create:!u,name:v.name,login:v.login,password:v.password,active:v.status==='active',admin:v.profile==='admin'});
+    });
+}
 function back(){
-  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico'];
+  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico',...(session?.admin?staffTabs:[])];
   const totals=k=>sum(data.bills.filter(b=>b.kind===k&&!b.paid),'amount');
   let content='';
-  if(tab==='Resumo'){
+  if(staffTabs.includes(tab)){content=staffPanel();}
+  else if(tab==='Resumo'){
     content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.initial)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
@@ -568,7 +618,14 @@ document.addEventListener('click',e=>{
   if(d.rename!==undefined)fields('Nome da mesa',input('Nome','name',tableOrder().name,'text','maxlength="100"'),async v=>{
     await save(next=>next.tables.find(t=>t.id===selectedTable).name=v.name.trim());
   });
-  if(d.tab){tab=d.tab;render();}
+  if(d.tab){
+    tab=d.tab;render();
+    if(staffTabs.includes(tab)) staffRequest().then(()=>{if(view==='back' && staffTabs.includes(tab))render();}).catch(e=>notice(e.message));
+  }
+  if(d.user!==undefined)editUser(d.user);
+  if(d.employee!==undefined)editEmployee(d.employee);
+  if(d.statement){selectedEmployee=d.statement;render();}
+  if(d.entry)employeeEntry(d.entry);
   if(d.category){category=d.category;search='';render();}
   if(d.add){cart[d.add]=(cart[d.add]||0)+1;render();}
   if(d.minus)removeItem('cart:'+d.minus);
@@ -584,7 +641,7 @@ document.addEventListener('click',e=>{
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 });
-loadState().then(state=>{data=state;render();}).catch(()=>notice('Não foi possível carregar o sistema.'));
+Promise.all([loadState(),fetch('/api/sessao').then(r=>r.json())]).then(([state,user])=>{data=state;session=user;$('#operator').textContent=user.name;render();}).catch(()=>notice('Não foi possível carregar o sistema.'));
 async function refreshTables() {
   if (!data || view!=='tables' || busy || dialog.open || document.hidden) return;
   try {
