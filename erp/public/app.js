@@ -5,7 +5,7 @@ const cents = value => Math.round(Number(value)*100);
 const sum = (items, key) => items.reduce((n,item)=>n+item[key],0);
 const date = () => new Date().toISOString();
 const stamp = value => new Date(value).toLocaleString('pt-BR');
-let data, busy=false, view='sales', tab='Resumo', category='Todos', search='', cart={};
+let data, busy=false, view='sales', tab='Resumo', category='Açaí', search='', cart={};
 const app=$('#app'), dialog=$('#dialog');
 let timer;
 let selectedTable = null;
@@ -76,8 +76,14 @@ const amount=(label,name,value='',min='0')=>input(label,name,value,'number',`req
 const select=(label,name,options,value)=>`<label>${label}<select required name="${name}">${options.map(([key,text])=>`<option value="${esc(key)}" ${key===value?'selected':''}>${esc(text)}</option>`).join('')}</select></label>`;
 const order=()=>data.products.filter(p=>cart[p.id]>0).map(p=>({...p,qty:cart[p.id],total:p.price*cart[p.id]}));
 function updateCatalog(){
-  const filter=search.toLocaleLowerCase('pt-BR');
-  $('#products').innerHTML=data.products.filter(p=>(category==='Todos'||p.category===category)&&p.name.toLocaleLowerCase('pt-BR').includes(filter)).map(p=>`<article class="card">${Number.isInteger(p.image)?`<img src="/img/${p.image}.jpg" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${money(p.price)}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div></article>`).join('')||'Nenhum produto encontrado.';
+  const normalize = value => value.trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const filter = normalize(search);
+  for (const button of document.querySelectorAll('[data-category]')) {
+    const selected = !filter && button.dataset.category === category;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  }
+  $('#products').innerHTML=data.products.filter(p=>filter ? normalize(p.name).includes(filter) : p.category===category).map(p=>`<article class="card">${Number.isInteger(p.image)?`<img src="/img/${p.image}.jpg" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${money(p.price)}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div></article>`).join('')||'Nenhum produto encontrado.';
 }
 function tableOrder() {
   return data.tables.find(t => t.id === selectedTable);
@@ -164,7 +170,7 @@ function closeTable() {
 }
 function sales(){
   const lines=order(), total=sum(lines,'total');
-  app.innerHTML=`<div class="pos"><section class="catalog"><h1>Nova venda</h1><input id="search" type="search" placeholder="Buscar produto" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${['Todos',...["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"]].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  app.innerHTML=`<div class="pos"><section class="catalog"><h1>Nova venda</h1><input id="search" type="search" placeholder="Buscar produto" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
   <aside class="order"><h2>Pedido atual</h2><div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${p.qty}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div><div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
@@ -337,7 +343,7 @@ document.addEventListener('click',e=>{
     await save(next=>next.tables.find(t=>t.id===selectedTable).name=v.name.trim());
   });
   if(d.tab){tab=d.tab;render();}
-  if(d.category){category=d.category;render();}
+  if(d.category){category=d.category;search='';render();}
   if(d.add){cart[d.add]=(cart[d.add]||0)+1;render();}
   if(d.minus){cart[d.minus]--;render();}
   if(d.pay!==undefined)payment(d.pay);

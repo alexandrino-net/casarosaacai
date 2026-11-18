@@ -87,3 +87,20 @@ h2{font-size:clamp(21px,1.9vw,28px)}
  .receipt-dialog::backdrop,.receipt-actions{display:none!important}
  .receipt-paper{padding:2mm;background:white;color:black;font-size:10pt;mask:none;clip-path:none}.receipt-paper li,.receipt-row{break-inside:avoid}
 }
+
+/* Product rows keep their content height while the desktop catalog scrolls. */
+.catalog #products {
+  grid-auto-rows: max-content;
+  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 164px), 1fr));
+}
+#products .card { min-width: 0; display: flex; flex-direction: column; }
+#products .details { flex: 1; overflow-wrap: anywhere; }
+#products .add { flex: 0 0 44px; height: 44px; padding: 0; }
+@media (max-width: 760px) {
+  .catalog { min-width: 0; }
+  .catalog .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .catalog .tabs button { flex: none; min-height: 44px; }
+  .catalog #products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #products .card .details { padding: 6px; gap: 4px; }
+}
