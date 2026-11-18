@@ -311,6 +311,70 @@ function payment(method){
   dialog.querySelector('[name=method]').onchange=sync;
   sync();
 }
+const cashFunctions = [
+  {key:'F3', name:'Sangria', description:'Retirar dinheiro do caixa'},
+  {key:'F4', name:'Suprimento', description:'Adicionar dinheiro ao caixa'}
+];
+function movementTotal(shift, kind) {
+  return sum((shift.movements || []).filter(m=>m.kind===kind),'amount');
+}
+function drawerBalance(state) {
+  const shift=state.cash;
+  const sales=state.sales.filter(s=>s.shift===shift.id);
+  return shift.initial+tenderTotal(sales,'Dinheiro')+movementTotal(shift,'Suprimento')-movementTotal(shift,'Sangria');
+}
+function functionMenu() {
+  dialog.innerHTML='<h2 id="function-title">Funções do caixa</h2><div class="function-table">'+
+    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],...cashFunctions.map(f=>[f.key,
+      '<button type="button" data-function="'+f.key+'"><strong>'+f.name+'</strong><br>'+f.description+'</button>'])])+
+    '</div><div class="actions"><button type="button" id="cancel">Voltar</button></div>';
+  dialog.querySelector('#cancel').onclick=()=>dialog.close();
+  dialog.querySelectorAll('[data-function]').forEach(button=>button.onclick=()=>{
+    dialog.close();
+    cashMovement(cashFunctions.find(f=>f.key===button.dataset.function));
+  });
+  dialog.showModal();
+}
+function cashMovement(f) {
+  const shift=data.cash;
+  if (!shift) {notice('Abra o caixa para registrar '+f.name.toLowerCase()+'.');return;}
+  fields(f.name,amount('Valor em dinheiro (R$)','amount','','.01')+
+    input('Motivo','reason','','text','required maxlength="160"')+
+    '<p class="function-error" role="alert"></p>',async v=>{
+    const value=cents(v.amount), reason=v.reason.trim();
+    if (!reason || !Number.isSafeInteger(value) || value<=0) {
+      dialog.querySelector('.function-error').textContent='Informe o valor e o motivo.';
+      throw Error('Informe o valor e o motivo.');
+    }
+    await save(next=>{
+      checkShift(next,shift);
+      if (f.name==='Sangria' && value>drawerBalance(next)) {
+        const message='Sangria maior que o dinheiro disponível ('+money(drawerBalance(next))+').';
+        dialog.querySelector('.function-error').textContent=message;
+        throw Error(message);
+      }
+      (next.cash.movements ??= []).push({id:operationId,kind:f.name,amount:value,reason,time:date()});
+    },true);
+    notice(f.name+' de '+money(value)+' registrada.');
+  },'Confirmar '+f.name.toLowerCase());
+}
+function movementHistory() {
+  const shifts=data.cash?[...data.shifts,data.cash]:data.shifts;
+  const entries=shifts.flatMap(shift=>shift.movements||[]).reverse();
+  return '<h2>Movimentações do caixa</h2>'+table(['Data','Operação','Motivo','Valor'],entries.map(m=>
+    [stamp(m.time),esc(m.kind),esc(m.reason),money(m.amount)]));
+}
+document.addEventListener('keydown',e=>{
+  if (!data || busy || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  const menuOpen=dialog.open && dialog.querySelector('#function-title');
+  if (document.querySelector('dialog[open]') && !menuOpen) return;
+  const fn=cashFunctions.find(f=>f.key===e.key);
+  if (e.key==='F2' || fn) {
+    e.preventDefault();
+    if (menuOpen) dialog.close();
+    if(fn) cashMovement(fn); else if (!menuOpen) functionMenu();
+  }
+});
 function cash(){
   if(!data.cash){
     fields('Abrir caixa',amount('Fundo inicial em dinheiro','initial','0'),async v=>{
@@ -320,9 +384,11 @@ function cash(){
     return;
   }
   const shift=data.cash, sales=data.sales.filter(s=>s.shift===shift.id);
-  const expected=shift.initial+tenderTotal(sales,'Dinheiro');
+  const expected=drawerBalance(data);
   fields('Fechar caixa',`<p>Abertura em ${stamp(shift.opened)}</p><p>Fundo inicial <strong>${money(shift.initial)}</strong></p>
   ${methods.map(m=>`<p>${m} <strong>${money(tenderTotal(sales,m))}</strong></p>`).join('')}
+  <p>Suprimentos <strong>${money(movementTotal(shift,'Suprimento'))}</strong></p>
+  <p>Sangrias <strong>${money(movementTotal(shift,'Sangria'))}</strong></p>
   <p>Dinheiro esperado <strong>${money(expected)}</strong></p>${amount('Dinheiro contado','counted')}`,async v=>{
     if(order().length)throw new Error('Conclua ou retire os itens do pedido antes de fechar.');
     const counted=cents(v.counted);
@@ -344,7 +410,7 @@ function back(){
   if(tab==='Resumo'){
     content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
-    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
+    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
   } else {
     const billCategory = ['fixos','impostos'].includes(tab) ? tab : null;
     const billKind = billCategory ? 'pagar' : tab;
@@ -407,6 +473,7 @@ document.addEventListener('click',e=>{
   const button=e.target.closest('button');
   if(!button||!data||busy)return;
   const d=button.dataset;
+  if(button.id==='functions'){functionMenu();return;}
   if(d.view){
     if(order().length && (d.view!==view || selectedTable)){
       notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, toque em Enviar para mesa.');

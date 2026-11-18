@@ -104,3 +104,7 @@ h2{font-size:clamp(21px,1.9vw,28px)}
   .catalog #products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #products .card .details { padding: 6px; gap: 4px; }
 }
+
+header #functions {background:transparent;color:inherit;text-decoration:underline;text-underline-offset:3px;font-size:14px;min-height:44px;padding:4px 6px}
+.function-table button {min-height:44px;width:100%;text-align:left}
+.function-error {color:#8d1738}
