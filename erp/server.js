@@ -294,14 +294,22 @@ const officialMenu = [
   }
 ];
 function applyMenu(data) {
-  if (data.menuVersion === 1) return false;
+  if (data.menuVersion >= 2) return false;
   const normalize = name => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  for (const item of officialMenu) {
+  for (const item of data.menuVersion===1?[]:officialMenu) {
     const existing = data.products.find(p => normalize(p.name) === normalize(item.name));
     if (existing) Object.assign(existing, item);
     else data.products.push({ id: crypto.randomUUID(), ...item });
   }
-  data.menuVersion = 1;
+  const diverse=data.products.find(p=>normalize(p.name)==='diversos');
+  if(diverse)diverse.variable=true;
+  else data.products.push({id:crypto.randomUUID(),name:'Diversos',category:'Diversos',unit:'un',price:0,variable:true});
+  const kg=data.products.find(p=>normalize(p.name)==='acainokg' || normalize(p.name)==='acaikg');
+  if(!data.products.some(p=>[p.code,p.barcode].includes('20'))){
+    if(kg)Object.assign(kg,{code:kg.code||'20',unit:'kg'});
+    else data.products.push({id:crypto.randomUUID(),name:'Açaí no kg',category:'Açaí',unit:'kg',code:'20',price:0});
+  }
+  data.menuVersion = 2;
   data.rev++;
   return true;
 }
@@ -415,6 +423,19 @@ const server = http.createServer(async (req, res) => {
         try {creditRules.check(checked,current.customers.find(c=>c.id===bill.party),sale.total,bill.due);}
         catch(error){return reply(400,{error:error.message});}
         checked.bills.push(bill);
+      }
+      const closedIds=new Set((current.closedTables||[]).map(t=>t.receiptId));
+      const completed=[
+        ...next.sales.filter(s=>!existing.has(s.id) && !s.partial),
+        ...(next.closedTables||[]).filter(t=>t.receiptId && !closedIds.has(t.receiptId))
+      ];
+      const stocked=new Map(next.products.filter(p=>Number.isSafeInteger(p.stock)).map(p=>[p.id,p]));
+      for(const sale of completed){
+        for(const item of sale.items||[]){
+          const product=stocked.get(item.productId||item.id);
+          const quantity=Math.round(item.qty*1000);
+          if(product && Number.isSafeInteger(quantity) && quantity>0)product.stock-=quantity;
+        }
       }
       const previousRev = next.rev;
       next.rev++;

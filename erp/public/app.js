@@ -67,23 +67,25 @@ function showReceipt(sale) {
   const payments = sale.payments || [{method:sale.method, amount:sale.total}];
   const venue = sale.table ? 'Mesa '+sale.table : 'Balcão';
   const items = sale.items.map(item => '<li><strong>'+esc(item.name)+'</strong>'+
-    row(item.qty+' × '+money(item.price),money(item.total))+'</li>').join('');
+    row(qtyLabel(item)+' × '+money(item.price)+(item.unit==='kg'?' / kg':''),money(item.total))+'</li>').join('');
   const paper = '<article class="receipt-paper"><div class="receipt-brand"><img src="/img/6.jpg" alt="">'+
     '<h2 id="receipt-title">Casa Rosa Açaí</h2><p>CNPJ 60.403.009/0001-75<br>Rua Lodonio Almeida, 139 · Centro<br>Itacaré – BA</p></div>'+
-    '<h3>Comprovante de venda</h3>'+row('Nº',sale.id.slice(0,8).toUpperCase())+
+    '<h3>'+(sale.mirror?'Espelho da comanda':'Comprovante de venda')+'</h3>'+row('Nº',sale.id.slice(0,8).toUpperCase())+
     row('Data',new Date(sale.time).toLocaleString('pt-BR',{timeZone:'America/Bahia'}))+
     row('Atendimento',venue)+(sale.customer?row('Cliente / identificação',sale.customer):'')+
     '<ul>'+items+'</ul>'+(sale.fee?row('Subtotal',money(sale.total-sale.fee))+row('Serviço (10%)',money(sale.fee)):'')+'<div class="receipt-total">'+row('TOTAL',money(sale.total))+'</div>'+
     payments.map(p=>row(p.method,money(p.amount))).join('')+
+    (sale.mirror?row('Saldo a pagar',money(sale.balance))+row('Pessoas',sale.people)+row('Total por pessoa',splitLabel(sale.balance,sale.people)):'')+
     (sale.given!=null?row('Recebido',money(sale.given))+row('Troco',money(sale.given-sale.total)):'')+
     (sale.due?row('Vencimento',sale.due.split('-').reverse().join('/')):'')+
-    '<footer>Obrigada pela visita!<br><small>Comprovante não fiscal</small></footer></article>';
+    '<footer>'+(sale.mirror?'Conferência da conta':'Obrigada pela visita!')+'<br><small>Documento não fiscal</small></footer></article>';
   const receipt = document.createElement('dialog');
   receipt.className='receipt-dialog';
   receipt.setAttribute('aria-labelledby','receipt-title');
   receipt.innerHTML=paper+'<div class="receipt-actions"><button type="button">Fechar</button><button type="button" class="primary">Imprimir cupom</button></div>';
   document.body.append(receipt);
   receipt.querySelector('.receipt-actions button').onclick=()=>receipt.close();
+  if(sale.mirror)receipt.querySelector('.primary').textContent='Imprimir comanda';
   receipt.querySelector('.primary').onclick=()=>window.print();
   receipt.addEventListener('close',()=>receipt.remove(),{once:true});
   receipt.showModal();
@@ -115,16 +117,56 @@ dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
 const input=(label,name,value='',type='text',attributes='required')=>`<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${attributes}></label>`;
 const amount=(label,name,value='',min='0')=>input(label,name,value,'number',`required min="${min}" max="99999999" step="0.01"`);
 const select=(label,name,options,value)=>`<label>${label}<select required name="${name}">${options.map(([key,text])=>`<option value="${esc(key)}" ${key===value?'selected':''}>${esc(text)}</option>`).join('')}</select></label>`;
-const order=()=>data.products.filter(p=>cart[p.id]>0).map(p=>({...p,qty:cart[p.id],total:p.price*cart[p.id]}));
+const customItems=new Map();
+const lineTotal=(price,qty)=>Math.round(price*Math.round(qty*1000)/1000);
+const qtyLabel=item=>item.unit==='kg'?item.qty.toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})+' kg':String(item.qty);
+const order=()=>[...data.products,...customItems.values()].filter(p=>cart[p.id]>0).map(p=>({...p,qty:cart[p.id],total:lineTotal(p.price,cart[p.id])}));
+function addProduct(id,quantity){
+  const product=customItems.get(id)||data.products.find(p=>p.id===id);
+  if(!product)return;
+  if(!product.variable)customItems.forEach((item,key)=>{if(!cart[key])customItems.delete(key);});
+  if(product.unit==='kg' && !product.price){notice('Cadastre o preço por kg na retaguarda.');return;}
+  const add=(item,qty)=>{
+    cart[item.id]=Math.round(((cart[item.id]||0)+qty)*1000)/1000;
+    search='';
+  };
+  if(product.variable){
+    fields('Diversos',amount('Preço unitário (R$)','price','','.01'),async v=>{
+      const price=cents(v.price);
+      if(!Number.isSafeInteger(price)||price<=0)throw Error('Informe um preço válido.');
+      const item={...product,id:'diversos:'+price,productId:product.id,price,variable:false};
+      customItems.set(item.id,item);
+      add(item,quantity||1);
+    },'Adicionar');
+  }else if(product.unit==='kg' && quantity===undefined){
+    fields(esc(product.name),input('Peso em kg','weight','','number','required min="0.001" max="999" step="0.001"'),async v=>{
+      const weight=Number(v.weight);
+      if(!Number.isFinite(weight)||weight<=0)throw Error('Informe o peso.');
+      add(product,weight);
+    },'Adicionar');
+  }else{
+    add(product,quantity||1);render();$('#search')?.focus();
+  }
+}
+function entry(raw){
+  const match=/^(\d+)(?:\*(\d+(?:[,.]\d{1,3})?))?$/.exec(raw.trim());
+  if(!match){notice('Use código ou código*quantidade. Exemplo: 20*0,500.');return;}
+  const product=data.products.find(p=>[p.code,p.barcode].includes(match[1]));
+  if(!product){notice('Código não cadastrado.');return;}
+  const qty=match[2]===undefined?undefined:Number(match[2].replace(',','.'));
+  if(qty!==undefined && (qty<=0||qty>99999||(product.unit!=='kg'&&!Number.isInteger(qty)))){
+    notice('Use quantidade inteira para itens por unidade e peso positivo para produtos por kg.');return;
+  }
+  addProduct(product.id,qty);
+}
 function updateCatalog(){
-  const normalize = value => value.trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const filter = normalize(search);
+  const filter=search.split('*')[0];
   for (const button of document.querySelectorAll('[data-category]')) {
     const selected = !filter && button.dataset.category === category;
     button.classList.toggle('active', selected);
     button.setAttribute('aria-pressed', String(selected));
   }
-  $('#products').innerHTML=data.products.filter(p=>filter ? (normalize(p.name).includes(filter) || p.barcode===search.trim()) : p.category===category).map(p=>`<article class="card">${Number.isInteger(p.image)?`<img src="/img/${p.image}.jpg" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${money(p.price)}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div></article>`).join('')||'Nenhum produto encontrado.';
+  $('#products').innerHTML=data.products.filter(p=>filter ? [p.code,p.barcode].some(code=>code?.startsWith(filter)) : p.category===category).map(p=>`<article class="card">${Number.isInteger(p.image)?`<img src="/img/${p.image}.jpg" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${(p.variable?'Preço na venda':money(p.price)+(p.unit==='kg'?' / kg':''))}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div></article>`).join('')||'Nenhum produto encontrado.';
 }
 function tableOrder() {
   return data.tables.find(t => t.id === selectedTable);
@@ -249,8 +291,8 @@ function closeTable() {
 }
 function sales(){
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Buscar produto ou ler código de barras" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
-  <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${p.qty}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
+  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas","Diversos"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${qtyLabel(p)}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
     $('.catalog h1').textContent = 'Mesa ' + t.id + (t.name ? ' — ' + t.name : '');
@@ -258,8 +300,8 @@ function sales(){
     const panel=document.createElement('section');
     panel.className='panel table-balance';
     panel.innerHTML='<button data-rename>Editar nome</button> <button data-view="tables">Ver mesas</button>' +
-      '<h3>Comanda salva</h3><div class="saved-items">' + t.items.map((i,index)=>'<p>'+i.qty+' × '+esc(i.name)+' — '+money(i.total)+' <button data-remove-saved="'+index+'" aria-label="Retirar uma unidade de '+esc(i.name)+'">−</button></p>').join('') + '</div>' +
-      '<button data-fee aria-pressed="'+Boolean(t.service)+'">'+(t.service?'Retirar':'Incluir')+' 10% de serviço</button>'+
+      '<h3>Comanda salva</h3><div class="saved-items">' + t.items.map((i,index)=>'<p>'+qtyLabel(i)+' × '+esc(i.name)+' — '+money(i.total)+' <button data-remove-saved="'+index+'" aria-label="Retirar uma unidade de '+esc(i.name)+'">−</button></p>').join('') + '</div>' +
+      '<button data-print-order>Espelho da comanda</button> <button data-fee aria-pressed="'+Boolean(t.service)+'">'+(t.service?'Retirar':'Incluir')+' 10% de serviço</button>'+
       '<p>Consumo <strong>'+money(sum(t.items,'total'))+'</strong> · Serviço <strong>'+money(serviceCharge(t.items,t.service))+'</strong> · Pago <strong>'+money(tablePaid(t))+'</strong></p>' +
       '<p>Saldo <strong>'+money(tableTotal(t)-tablePaid(t))+'</strong></p>' +
       '<button data-table-receive>Pagamento parcial / total</button> <button data-table-close>Encerrar mesa</button>';
@@ -276,11 +318,9 @@ function sales(){
   }
   $('#search').onkeydown=e=>{
     if(e.key!=='Enter' || !e.target.value.trim()) return;
-    const product=data.products.find(p=>p.barcode===e.target.value.trim());
-    if(!product){notice('Código de barras não cadastrado.');return;}
-    e.preventDefault();cart[product.id]=(cart[product.id]||0)+1;search='';render();$('#search').focus();
+    e.preventDefault();entry(e.target.value);
   };
-  $('#search').oninput=e=>{search=e.target.value;updateCatalog();};
+  $('#search').oninput=e=>{search=e.target.value.replace(/[^0-9*,.]/g,'');e.target.value=search;updateCatalog();};
   updateCatalog();
 }
 const splitMethods=['Pix','Cartão de crédito','Cartão de débito','Dinheiro','Ticket alimentação'];
@@ -373,9 +413,48 @@ function drawerBalance(state) {
   const sales=state.sales.filter(s=>s.shift===shift.id);
   return shift.initial+tenderTotal(shift.collections||[],'Dinheiro')+tenderTotal(sales,'Dinheiro')+movementTotal(shift,'Suprimento')-movementTotal(shift,'Sangria');
 }
+function splitLabel(balance,people){
+  const base=Math.floor(balance/people), extra=balance%people;
+  return extra ? extra+' × '+money(base+1)+' + '+(people-extra)+' × '+money(base) : money(base);
+}
+function printOrder(){
+  const t=selectedTable?tableOrder():null;
+  if(!t){notice('Abra uma mesa para imprimir sua comanda.');return;}
+  const items=[...t.items,...order()];
+  if(!items.length){notice('Adicione itens à mesa antes de imprimir.');return;}
+  fields('Espelho da mesa '+esc(t.id),input('Quantas pessoas estão na mesa?','people','1','number','required min="1" max="999" step="1"'),async v=>{
+    const people=Number(v.people), fee=serviceCharge(items,t.service),total=sum(items,'total')+fee;
+    if(!Number.isInteger(people)||people<1||people>999)throw Error('Informe uma quantidade de pessoas válida.');
+    return {receipt:{mirror:true,id:t.id,time:date(),table:t.id,customer:t.name,items,fee,total,people,payments:t.payments,balance:total-tablePaid(t)}};
+  },'Ver comanda');
+}
+function productList(){
+  dialog.innerHTML='<h2>Lista de produtos</h2>'+input('Filtrar por nome','filter','','search','')+'<div id="product-list"></div><div class="actions"><button id="cancel">Voltar</button></div>';
+  const filter=dialog.querySelector('[name=filter]');
+  const update=()=>{
+    const query=filter.value.trim().toLocaleLowerCase('pt-BR');
+    $('#product-list').innerHTML=table(['Código','Produto','Preço',''],data.products.filter(p=>p.name.toLocaleLowerCase('pt-BR').includes(query)).map(p=>[
+      esc(p.code||p.barcode||'—'),esc(p.name),p.variable?'Na venda':money(p.price)+(p.unit==='kg'?' / kg':''),
+      view==='sales'?'<button data-list-add="'+esc(p.id)+'">Adicionar</button>':''
+    ]));
+  };
+  filter.oninput=update;update();
+  $('#cancel').onclick=()=>dialog.close();
+  dialog.showModal();
+}
+function closeSale(){
+  if(view!=='sales'||!order().length){notice('Adicione itens ao pedido para fechar a venda.');return;}
+  payment('');
+}
+const letterFunctions={
+  d:{label:'Fecha venda',run:closeSale},
+  r:{label:'Lista produtos',run:productList},
+  i:{label:'Clientes',run:identifyBuyer},
+  j:{label:'Imprime comanda (espelho da conta)',run:printOrder}
+};
 function functionMenu() {
   dialog.innerHTML='<h2 id="function-title">Funções do caixa</h2><div class="function-table">'+
-    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],['F7','<button data-identify>Cliente ou funcionário</button>'],['F8','<button data-collect>Receber fiado</button>'],['X','<button data-remove-shortcut>Retirar item do pedido</button>'],...cashFunctions.map(f=>[f.key,
+    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],...Object.entries(letterFunctions).map(([key,fn])=>[key.toUpperCase(),'<button data-letter=+key+>'+fn.label+'</button>']),['F7','<button data-identify>Cliente ou funcionário</button>'],['F8','<button data-collect>Receber fiado</button>'],['X','<button data-remove-shortcut>Retirar item do pedido</button>'],...cashFunctions.map(f=>[f.key,
       '<button type="button" data-function="'+f.key+'"><strong>'+f.name+'</strong><br>'+f.description+'</button>'])])+
     '</div><div class="actions"><button type="button" id="cancel">Voltar</button></div>';
   dialog.querySelector('#cancel').onclick=()=>dialog.close();
@@ -416,9 +495,14 @@ function movementHistory() {
     [stamp(m.time),esc(m.kind),esc(m.reason),money(m.amount)]));
 }
 document.addEventListener('keydown',e=>{
-  if (!data || !canView('sales') || busy || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (!data || !canView('sales') || busy || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
   const menuOpen=dialog.open && dialog.querySelector('#function-title');
   if (document.querySelector('dialog[open]') && !menuOpen) return;
+  if(e.shiftKey && !letterFunctions[e.key.toLowerCase()])return;
+  const shortcut=letterFunctions[e.key.toLowerCase()];
+  if(shortcut && (e.target.id==='search'||!e.target.closest('input,textarea,select,[contenteditable]'))){
+    e.preventDefault();if(menuOpen)dialog.close();shortcut.run();return;
+  }
   if(e.key.toLowerCase()==='x' && !e.target.closest('input,textarea,select,[contenteditable="true"]')){
     e.preventDefault();if(menuOpen)dialog.close();removeItem();return;
   }
@@ -526,7 +610,7 @@ function back(){
     const billKind = billCategory ? 'pagar' : tab;
     content=`<button class="primary" data-edit="${billKind}" data-category-bill="${billCategory||''}">Novo cadastro</button>`;
     if(tab==='products'){
-      content+=table(['Produto','Categoria','Preço',''],data.products.map(p=>[esc(p.name),esc(p.category),money(p.price),edit(tab,p.id)]));
+      content+=table(['Produto','Categoria','Unidade','Estoque','Preço',''],data.products.map(p=>[esc(p.name),esc(p.category),p.unit==='kg'?'KG':'UN',p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':money(p.price),edit(tab,p.id)]));
     } else if(data[tab]){
       content+=table(['Nome','Documento','Contato','Limite','Em aberto',''],data[tab].map(p=>[esc(p.name),esc(p.doc),esc(p.contact),money(p.limit),money(data.bills.filter(b=>!b.paid&&b.party===p.id).reduce((n,b)=>n+creditRules.remaining(b),0)),edit(tab,p.id)]));
     } else {
@@ -546,7 +630,7 @@ function record(key,id,billCategory){
   if(isBill){
     html=(key==='pagar'?select('Classificação','category',[['geral','Geral'],['fixos','Custos fixos'],['impostos','Impostos']],old?.category||billCategory||'geral'):'')+select(key==='pagar'?'Fornecedor':'Cliente','party',(key==='pagar'?[['','Sem fornecedor'],...parties.map(p=>[p.id,p.name])]:parties.map(p=>[p.id,p.name])),old?.party).replace(key==='pagar'?' required':'__unused__','')+input('Descrição','description',old?.description)+amount('Valor','amount',old?old.amount/100:'','.01')+input('Vencimento','due',old?.due,'date');
   } else if(key==='products'){
-    html=input('Nome','name',old?.name)+input('Código de barras','barcode',old?.barcode,'text','maxlength="80"')+select('Categoria','category',["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>[c,c]),old?.category)+amount('Preço','price',old?old.price/100:'','.01')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
+    html=input('Nome','name',old?.name)+input('Código do item','code',old?.code,'text','inputmode="numeric" maxlength="30"')+input('Código de barras','barcode',old?.barcode,'text','inputmode="numeric" maxlength="80"')+select('Unidade de medida','unit',[['un','UN'],['kg','KG']],old?.unit||'un')+select('Categoria','category',["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas","Diversos"].map(c=>[c,c]),old?.category)+amount('Preço por unidade de medida','price',old?old.price/100:'',old?.variable?'0':'.01')+input('Estoque atual','stock',old?.stock==null?'':old.stock/1000,'number','step="0.001"')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
   } else {
     html=input('Nome','name',old?.name)+input('CPF / CNPJ','doc',old?.doc,'text','')+input('Telefone ou e-mail','contact',old?.contact,'text','')+amount('Limite de crédito','limit',old?old.limit/100:'0');
   }
@@ -562,8 +646,15 @@ function record(key,id,billCategory){
       const open=data.bills.filter(b=>b.id!==id&&b.party===v.party&&b.kind===key&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
       if(key==='receber'&&open+v.amount>limit)throw new Error('O lançamento excede o limite de crédito disponível.');
     } else if(key==='products'){
-      v.barcode=v.barcode.trim();
-      if(v.barcode && data.products.some(p=>p.id!==id && p.barcode===v.barcode)) throw Error('Código de barras já cadastrado.');
+      v.code=v.code.trim();v.barcode=v.barcode.trim();
+      for(const code of [v.code,v.barcode].filter(Boolean)){
+        if(!/^\d+$/.test(code))throw Error('Informe somente números nos códigos.');
+        if(data.products.some(p=>p.id!==id && [p.code,p.barcode].includes(code)))throw Error('Código já cadastrado.');
+      }
+      const stock=v.stock===''?null:Number(v.stock);
+      if(stock!==null && (!Number.isFinite(stock)||Math.abs(stock)>999999999||(v.unit!=='kg'&&!Number.isInteger(stock))))
+        throw Error('Informe estoque inteiro para UN ou até três casas decimais para KG.');
+      v.stock=stock===null?null:Math.round(stock*1000);
       v.price=cents(v.price);v.image=v.image===''?null:Number(v.image);
     } else {
       if(key==='customers') v.cycleDay=v.cycle==='manual'?null:Number(v.cycleDay);
@@ -681,7 +772,7 @@ function removeItem(preselected){
   const choices=order().map(i=>['cart:'+i.id,'Pedido · '+i.qty+' × '+i.name]);
   (t?.items||[]).forEach((i,index)=>choices.push(['saved:'+index,'Comanda · '+i.qty+' × '+i.name]));
   if(!choices.length){notice('Pedido sem itens.');return;}
-  fields('Retirar uma unidade',select('Item','line',choices,preselected||choices[0][0])+
+  fields('Retirar item',select('Item','line',choices,preselected||choices[0][0])+
     input('Inicial do responsável','initial','','text','required maxlength="1"'),async v=>{
     const initial=v.initial.trim().toLocaleUpperCase('pt-BR');
     if(!/^\p{L}$/u.test(initial)) throw Error('Informe a inicial do responsável.');
@@ -692,14 +783,14 @@ function removeItem(preselected){
         const current=sameTable(next,t);
         if(JSON.stringify(current.items)!==JSON.stringify(t.items)) throw review('A comanda mudou. Selecione o item novamente.');
         const line=current.items[Number(key)];
-        line.qty--;line.total-=line.price;
+        line.qty=line.unit==='kg'?0:line.qty-1;line.total=lineTotal(line.price,line.qty);
         if(!line.qty) current.items.splice(Number(key),1);
         if(tableTotal(current)<tablePaid(current)) throw Error('A retirada deixaria o total abaixo do valor já pago.');
       }
       (next.itemRemovals??=[]).push({time:date(),initial,table:t?.id,name:item.name,price:item.price});
     },true);
-    if(!saved){cart[key]--;if(!order().length) counterService=true;}
-  },'Retirar uma unidade');
+    if(!saved){cart[key]=item.unit==='kg'?0:cart[key]-1;if(!order().length) counterService=true;}
+  },'Retirar');
 }
 function canView(target){
   return session?.admin || (target==='back'?session?.access!=='sales':session?.access!=='back');
@@ -726,9 +817,12 @@ document.addEventListener('click',e=>{
     }
     view=d.view;if(view==='sales')selectedTable=null;if(!order().length)buyer=null;render();
   }
+  if(d.letter && canView('sales')){dialog.close();letterFunctions[d.letter].run();return;}
+  if(d.listAdd && canView('sales')){dialog.close();addProduct(d.listAdd);return;}
   if(d.identify!==undefined){if(dialog.open)dialog.close();identifyBuyer();return;}
   if(d.collect!==undefined){if(dialog.open)dialog.close();receiveCredit();return;}
   if(d.table)openTable(d.table);
+  if(d.printOrder!==undefined)printOrder();
   if(d.tableReceive!==undefined)receiveTable();
   if(d.tableClose!==undefined)closeTable();
   if(d.rename!==undefined)fields('Nome da mesa',input('Nome','name',tableOrder().name,'text','maxlength="100"'),async v=>{
@@ -743,7 +837,7 @@ document.addEventListener('click',e=>{
   if(d.statement){selectedEmployee=d.statement;render();}
   if(d.entry)employeeEntry(d.entry);
   if(d.category){category=d.category;search='';render();}
-  if(d.add){cart[d.add]=(cart[d.add]||0)+1;render();}
+  if(d.add)addProduct(d.add);
   if(d.minus)removeItem('cart:'+d.minus);
   if(d.removeSaved!==undefined)removeItem('saved:'+d.removeSaved);
   if(d.fee!==undefined)toggleService();
