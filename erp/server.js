@@ -387,7 +387,7 @@ const server = http.createServer(async (req, res) => {
         const changed=key=>!isDeepStrictEqual(next[key],current[key]??initial[key]);
         const forbidden=actor.access==='back'?
           ['sales','cash','shifts','tables','closedTables','itemRemovals']:
-          ['products','customers','suppliers','company'];
+          ['products','categories','customers','suppliers','company'];
         if(forbidden.some(changed)) return reply(403,{error:'Seu usuário não tem permissão para esta alteração.'});
         if(actor.access==='sales' && changed('bills')){
           const previous=new Map(current.bills.map(b=>[b.id,b]));

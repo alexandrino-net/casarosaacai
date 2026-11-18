@@ -291,7 +291,7 @@ function closeTable() {
 }
 function sales(){
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas","Diversos"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"><div class="tabs">${productCategories().map(c=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
   <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${qtyLabel(p)}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
@@ -596,6 +596,26 @@ function editUser(login){
       await staffRequest({action:'user',create:!u,name:v.name,login:v.login,password:v.password,active:v.status==='active',admin:v.profile==='admin',access:v.access});
     });
 }
+const defaultCategories=['Açaí','Cafés','Pães','Omeletes','Adicionais','Sobremesa saudável','Sucos','Vitaminas','Bebidas','Diversos'];
+function productCategories(state=data){
+  return [...new Set([...defaultCategories,...(state.categories||[]).filter(c=>!c.parent).map(c=>c.name),...state.products.map(p=>p.category).filter(Boolean)])];
+}
+function subcategories(parent){
+  return (data.categories||[]).filter(c=>c.parent===parent).map(c=>c.name);
+}
+let showCategories=false;
+function createCategory(){
+  fields('Nova categoria ou subcategoria',input('Nome','name','','text','required maxlength="80"')+
+    select('Categoria principal','parent',[['','Nenhuma — criar categoria principal'],...productCategories().map(c=>[c,c])],'').replace(' required',''),async v=>{
+    const name=v.name.trim(), parent=v.parent;
+    if(!name)throw Error('Informe o nome.');
+    await save(next=>{
+      const names=parent?(next.categories||[]).filter(c=>c.parent===parent).map(c=>c.name):productCategories(next);
+      if(names.some(n=>n.toLocaleLowerCase('pt-BR')===name.toLocaleLowerCase('pt-BR')))throw Error('Já existe uma categoria com esse nome neste nível.');
+      (next.categories??=[]).push({name,parent});
+    });
+  });
+}
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico',...(session?.admin?staffTabs:[])];
   const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
@@ -610,7 +630,10 @@ function back(){
     const billKind = billCategory ? 'pagar' : tab;
     content=`<button class="primary" data-edit="${billKind}" data-category-bill="${billCategory||''}">Novo cadastro</button>`;
     if(tab==='products'){
-      content+=table(['Produto','Categoria','Unidade','Estoque','Preço',''],data.products.map(p=>[esc(p.name),esc(p.category),p.unit==='kg'?'KG':'UN',p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':money(p.price),edit(tab,p.id)]));
+      content+='<button data-product-categories aria-expanded="'+showCategories+'">Categorias</button>';
+      if(showCategories)content+='<h2>Categorias de produtos</h2><button data-new-category>Nova categoria ou subcategoria</button>'+
+        table(['Categoria','Subcategorias'],productCategories().map(c=>[esc(c),subcategories(c).map(esc).join(', ')||'—']));
+      content+=table(['Produto','Categoria','Unidade','Estoque','Preço',''],data.products.map(p=>[esc(p.name),esc(p.category)+(p.subcategory?' / '+esc(p.subcategory):''),p.unit==='kg'?'KG':'UN',p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':money(p.price),edit(tab,p.id)]));
     } else if(data[tab]){
       content+=table(['Nome','Documento','Contato','Limite','Em aberto',''],data[tab].map(p=>[esc(p.name),esc(p.doc),esc(p.contact),money(p.limit),money(data.bills.filter(b=>!b.paid&&b.party===p.id).reduce((n,b)=>n+creditRules.remaining(b),0)),edit(tab,p.id)]));
     } else {
@@ -630,7 +653,7 @@ function record(key,id,billCategory){
   if(isBill){
     html=(key==='pagar'?select('Classificação','category',[['geral','Geral'],['fixos','Custos fixos'],['impostos','Impostos']],old?.category||billCategory||'geral'):'')+select(key==='pagar'?'Fornecedor':'Cliente','party',(key==='pagar'?[['','Sem fornecedor'],...parties.map(p=>[p.id,p.name])]:parties.map(p=>[p.id,p.name])),old?.party).replace(key==='pagar'?' required':'__unused__','')+input('Descrição','description',old?.description)+amount('Valor','amount',old?old.amount/100:'','.01')+input('Vencimento','due',old?.due,'date');
   } else if(key==='products'){
-    html=input('Nome','name',old?.name)+input('Código do item','code',old?.code,'text','inputmode="numeric" maxlength="30"')+input('Código de barras','barcode',old?.barcode,'text','inputmode="numeric" maxlength="80"')+select('Unidade de medida','unit',[['un','UN'],['kg','KG']],old?.unit||'un')+select('Categoria','category',["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas","Diversos"].map(c=>[c,c]),old?.category)+amount('Preço por unidade de medida','price',old?old.price/100:'',old?.variable?'0':'.01')+input('Estoque atual','stock',old?.stock==null?'':old.stock/1000,'number','step="0.001"')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
+    html=input('Nome','name',old?.name)+input('Código do item','code',old?.code,'text','inputmode="numeric" maxlength="30"')+input('Código de barras','barcode',old?.barcode,'text','inputmode="numeric" maxlength="80"')+select('Unidade de medida','unit',[['un','UN'],['kg','KG']],old?.unit||'un')+select('Categoria','category',productCategories().map(c=>[c,c]),old?.category)+'<div id="product-subcategory"></div>'+amount('Preço por unidade de medida','price',old?old.price/100:'',old?.variable?'0':'.01')+input('Estoque atual','stock',old?.stock==null?'':old.stock/1000,'number','step="0.001"')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
   } else {
     html=input('Nome','name',old?.name)+input('CPF / CNPJ','doc',old?.doc,'text','')+input('Telefone ou e-mail','contact',old?.contact,'text','')+amount('Limite de crédito','limit',old?old.limit/100:'0');
   }
@@ -668,6 +691,14 @@ function record(key,id,billCategory){
     });
     notice('Cadastro salvo.');
   });
+  if(key==='products'){
+    const picker=dialog.querySelector('[name=category]');
+    const refresh=()=>{
+      const options=[['','Sem subcategoria'],...subcategories(picker.value).map(name=>[name,name])];
+      $('#product-subcategory').innerHTML=select('Subcategoria','subcategory',options,picker.value===old?.category?old.subcategory||'':'').replace(' required','');
+    };
+    picker.onchange=refresh;refresh();
+  }
   if(key==='customers'){
     const cycle=dialog.querySelector('[name=cycle]');
     const refresh=()=>{
@@ -843,6 +874,8 @@ document.addEventListener('click',e=>{
   if(d.fee!==undefined)toggleService();
   if(d.pay!==undefined)payment(d.pay);
   if(button.id==='cash'||d.cash!==undefined)cash();
+  if(d.productCategories!==undefined){showCategories=!showCategories;render();}
+  if(d.newCategory!==undefined)createCategory();
   if(d.edit)record(d.edit,d.id,d.categoryBill);
   if(d.settle)settleBill(d.settle);
   if(d.backup!==undefined){
