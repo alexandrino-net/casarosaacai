@@ -73,7 +73,7 @@ function showReceipt(sale) {
     '<h3>Comprovante de venda</h3>'+row('Nº',sale.id.slice(0,8).toUpperCase())+
     row('Data',new Date(sale.time).toLocaleString('pt-BR',{timeZone:'America/Bahia'}))+
     row('Atendimento',venue)+(sale.customer?row('Cliente / identificação',sale.customer):'')+
-    '<ul>'+items+'</ul><div class="receipt-total">'+row('TOTAL',money(sale.total))+'</div>'+
+    '<ul>'+items+'</ul>'+(sale.fee?row('Subtotal',money(sale.total-sale.fee))+row('Serviço (10%)',money(sale.fee)):'')+'<div class="receipt-total">'+row('TOTAL',money(sale.total))+'</div>'+
     payments.map(p=>row(p.method,money(p.amount))).join('')+
     (sale.given!=null?row('Recebido',money(sale.given))+row('Troco',money(sale.given-sale.total)):'')+
     (sale.due?row('Vencimento',sale.due.split('-').reverse().join('/')):'')+
@@ -92,7 +92,7 @@ function showReceipt(sale) {
 function fields(title, html, action, submit='Salvar') {
   if(busy) return;
   operationId=crypto.randomUUID();
-  dialog.innerHTML=`<form><h2>${title}</h2>${html}<div class="actions"><button type="button" id="cancel">Voltar</button><button class="primary">${submit}</button></div></form>`;
+  dialog.innerHTML=`<form><h2>${title}</h2>${html}<p role="alert" class="form-error" hidden></p><div class="actions"><button type="button" id="cancel">Voltar</button><button class="primary">${submit}</button></div></form>`;
   dialog.querySelector('#cancel').onclick=()=>dialog.close();
   dialog.querySelector('form').onsubmit=async event=>{
     event.preventDefault();
@@ -106,7 +106,7 @@ function fields(title, html, action, submit='Salvar') {
       dialog.close();
       render();
       if (result?.receipt) showReceipt(result.receipt);
-    } catch(error){if(error.review){dialog.close();render();}notice(error.message);}
+    } catch(error){if(error.review){dialog.close();render();notice(error.message);}else{const alert=dialog.querySelector('.form-error');alert.hidden=false;alert.textContent=error.message;}}
     finally {busy=false;buttons.forEach(b=>b.disabled=false);}
   };
   dialog.showModal();
@@ -124,12 +124,14 @@ function updateCatalog(){
     button.classList.toggle('active', selected);
     button.setAttribute('aria-pressed', String(selected));
   }
-  $('#products').innerHTML=data.products.filter(p=>filter ? normalize(p.name).includes(filter) : p.category===category).map(p=>`<article class="card">${Number.isInteger(p.image)?`<img src="/img/${p.image}.jpg" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${money(p.price)}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div></article>`).join('')||'Nenhum produto encontrado.';
+  $('#products').innerHTML=data.products.filter(p=>filter ? (normalize(p.name).includes(filter) || p.barcode===search.trim()) : p.category===category).map(p=>`<article class="card">${Number.isInteger(p.image)?`<img src="/img/${p.image}.jpg" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${money(p.price)}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div></article>`).join('')||'Nenhum produto encontrado.';
 }
 function tableOrder() {
   return data.tables.find(t => t.id === selectedTable);
 }
-const tableTotal = t => sum(t.items, 'total');
+const serviceCharge = (items, enabled) => enabled ? Math.round(sum(items,'total') / 10) : 0;
+const tableTotal = t => sum(t.items,'total') + serviceCharge(t.items,t.service);
+let counterService=false;
 const tablePaid = t => sum(t.payments, 'amount');
 function tables() {
   app.innerHTML = '<section class="back"><h1>Mesas e comandas</h1><div class="table-map">' +
@@ -164,14 +166,16 @@ function sendToTable() {
   const available = data.tables;
   const choices = [['','Escolha a mesa'], ...available.map(t=>[t.id,'Mesa '+t.id+' — '+(t.opened?(t.name||'Ocupada'):'Livre')])];
   fields('Enviar pedido para mesa',select('Mesa','table',choices,'')+
-    input('Nome do cliente (mesa livre)','name','','text','maxlength="100"'), async values=>{
+    input('Nome do cliente (mesa livre)','name','','text','maxlength="100"')+
+    (counterService?'<p>Os 10% de serviço serão aplicados à comanda inteira.</p>':''), async values=>{
     const target = available.find(t=>t.id===values.table);
     await save(next=>{
       const table = sameTable(next,target);
       if (!table.opened) Object.assign(table,{opened:date(),name:values.name.trim()});
+      if (counterService) table.service=true;
       table.items.push(...items);
     },true);
-    cart={}; selectedTable=target.id; selectedOpening=tableOrder().opened;
+    cart={}; counterService=false; selectedTable=target.id; selectedOpening=tableOrder().opened;
     notice('Pedido enviado à mesa '+target.id+'.');
   },'Enviar pedido');
 }
@@ -192,22 +196,24 @@ function receiveTable() {
   fields('Receber da mesa ' + t.id,
     '<p>Saldo ' + money(balance) + '</p>' +
     amount('Valor do pagamento','amount',(balance/100).toFixed(2),'.01') +
-    select('Forma de pagamento','method',['Dinheiro','Pix','Cartão'].map(m=>[m,m]),'Pix'), async v => {
+    paymentChoices(splitMethods)+'<div id="payment-extra"></div>', async v => {
       const value=cents(v.amount);
       if (!Number.isSafeInteger(value) || value <= 0 || value > balance)
         throw Error('Informe um valor entre R$ 0,01 e o saldo da mesa.');
+      const parts=tenderParts(v,value);
       await save(next => {
         checkShift(next,shift);
         const table = sameTable(next,t);
         if (tablePaid(table)!==tablePaid(t) || value>tableTotal(table)-tablePaid(table))
           throw review('A mesa recebeu outro pagamento. Confira o saldo atualizado.');
         const receipt={id:crypto.randomUUID(),amount:value,method:v.method,time:date(),shift:next.cash.id};
-        table.payments.push(receipt);
+        table.payments.push(...parts.map(part=>({...receipt,...part})));
         next.sales.push({id:receipt.id,shift:receipt.shift,time:receipt.time,items:[],
-          total:value,method:v.method,customer:table.name,table:table.id,partial:true});
+          total:value,payments:parts,method:v.method,customer:table.name,table:table.id,partial:true});
       },true);
       notice('Pagamento registrado no caixa.');
     },'Registrar pagamento');
+  bindSplitFields();
 }
 function closeTable() {
   const t=tableOrder();
@@ -220,17 +226,17 @@ function closeTable() {
       if (tableTotal(table)!==tablePaid(table) || table.items.length!==t.items.length || table.payments.length!==t.payments.length)
         throw review('A comanda mudou. Confira o consumo e os pagamentos.');
       next.closedTables.push({...structuredClone(table),id:table.id,receiptId:operationId,closed:date()});
-      Object.assign(table,{name:'',opened:null,items:[],payments:[]});
+      Object.assign(table,{name:'',opened:null,items:[],payments:[],service:false});
     },true);
     const closed=data.closedTables.find(t=>t.receiptId===operationId);
     selectedTable=null;view='tables';
-    return {receipt:{id:closed.receiptId,time:closed.closed,table:closed.id,customer:closed.name,items:closed.items,payments:closed.payments,total:tableTotal(closed)}};
+    return {receipt:{id:closed.receiptId,time:closed.closed,table:closed.id,customer:closed.name,items:closed.items,payments:closed.payments,fee:serviceCharge(closed.items,closed.service),total:tableTotal(closed)}};
   },'Encerrar mesa');
 }
 function sales(){
-  const lines=order(), total=sum(lines,'total');
-  app.innerHTML=`<div class="pos"><section class="catalog"><h1>Nova venda</h1><input id="search" type="search" placeholder="Buscar produto" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
-  <aside class="order"><h2>Pedido atual</h2><div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${p.qty}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div><div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
+  const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
+  app.innerHTML=`<div class="pos"><section class="catalog"><h1>Nova venda</h1><input id="search" type="search" placeholder="Buscar produto ou ler código de barras" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  <aside class="order"><h2>Pedido atual</h2><div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${p.qty}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
     $('.catalog h1').textContent = 'Mesa ' + t.id + (t.name ? ' — ' + t.name : '');
@@ -238,8 +244,9 @@ function sales(){
     const panel=document.createElement('section');
     panel.className='panel table-balance';
     panel.innerHTML='<button data-rename>Editar nome</button> <button data-view="tables">Ver mesas</button>' +
-      '<h3>Comanda salva</h3><div class="saved-items">' + t.items.map(i=>'<p>'+i.qty+' × '+esc(i.name)+' — '+money(i.total)+'</p>').join('') + '</div>' +
-      '<p>Consumo <strong>'+money(tableTotal(t))+'</strong> · Pago <strong>'+money(tablePaid(t))+'</strong></p>' +
+      '<h3>Comanda salva</h3><div class="saved-items">' + t.items.map((i,index)=>'<p>'+i.qty+' × '+esc(i.name)+' — '+money(i.total)+' <button data-remove-saved="'+index+'" aria-label="Retirar uma unidade de '+esc(i.name)+'">−</button></p>').join('') + '</div>' +
+      '<button data-fee aria-pressed="'+Boolean(t.service)+'">'+(t.service?'Retirar':'Incluir')+' 10% de serviço</button>'+
+      '<p>Consumo <strong>'+money(sum(t.items,'total'))+'</strong> · Serviço <strong>'+money(serviceCharge(t.items,t.service))+'</strong> · Pago <strong>'+money(tablePaid(t))+'</strong></p>' +
       '<p>Saldo <strong>'+money(tableTotal(t)-tablePaid(t))+'</strong></p>' +
       '<button data-table-receive>Pagamento parcial / total</button> <button data-table-close>Encerrar mesa</button>';
     $('.order').appendChild(panel);
@@ -253,11 +260,29 @@ function sales(){
     button.onclick=sendToTable;
     $('.order [data-pay]').before(button);
   }
+  $('#search').onkeydown=e=>{
+    if(e.key!=='Enter' || !e.target.value.trim()) return;
+    const product=data.products.find(p=>p.barcode===e.target.value.trim());
+    if(!product){notice('Código de barras não cadastrado.');return;}
+    e.preventDefault();cart[product.id]=(cart[product.id]||0)+1;search='';render();$('#search').focus();
+  };
   $('#search').oninput=e=>{search=e.target.value;updateCatalog();};
   updateCatalog();
 }
-const methods=['Pix','Cartão','Dinheiro','A prazo'];
-const splitMethods = ['Pix','Cartão','Dinheiro'];
+const splitMethods=['Pix','Cartão de crédito','Cartão de débito','Dinheiro','Ticket alimentação'];
+const methods=[...splitMethods,'A prazo'];
+const paymentChoices = choices => select('Forma de pagamento','method',[...choices,'Dividido'].map(m=>[m,m]),'Pix');
+const splitFields = () => splitMethods.map((m,i)=>amount(m,'part'+i,'0')).join('');
+function bindSplitFields() {
+  dialog.querySelector('[name=method]').onchange=e=>{
+    $('#payment-extra').innerHTML=e.target.value==='Dividido'?splitFields():'';
+  };
+}
+function tenderParts(v,total) {
+  if (v.method==='Dividido') return splitPayment(v,total);
+  if (!splitMethods.includes(v.method)) throw Error('Selecione a forma de pagamento.');
+  return [{method:v.method,amount:total}];
+}
 function splitPayment(values,total) {
   const parts = splitMethods.map((method,i)=>({method,amount:cents(values['part'+i] || 0)}));
   if(parts.some(p=>!Number.isSafeInteger(p.amount)||p.amount<0)) throw new Error('Confira os valores informados.');
@@ -271,9 +296,9 @@ function tenderTotal(sales,method) {
 function payment(method){
   if(selectedTable){addTableItems();return;}
   if(!data.cash){notice('Abra o caixa para registrar a venda.');cash();return;}
-  const items=order(), total=sum(items,'total'), shift=data.cash;
+  const items=order(), fee=serviceCharge(items,counterService), total=sum(items,'total')+fee, shift=data.cash;
   const customerOptions=[['','Selecione o cliente'],...data.customers.map(c=>[c.id,c.name])];
-  fields('Receber pagamento',`<p>Total <strong>${money(total)}</strong></p>${select('Forma de pagamento','method',[...methods,'Dividido'].map(x=>[x,x]),method||'Pix')}<div id="payment-extra"></div>`,async v=>{
+  fields('Receber pagamento',`<p>Total <strong>${money(total)}</strong></p>${select('Forma de pagamento','method',[...(method==='Cartão'?[['','Escolha crédito ou débito']]:[]),...([...methods,'Dividido'].map(x=>[x,x]))],method==='Cartão'?'':method||'Pix')}<div id="payment-extra"></div>`,async v=>{
     const customer=data.customers.find(c=>c.id===v.customer);
     const payments=v.method==='Dividido'?splitPayment(v,total):undefined;
     const given=v.given?cents(v.given):total;
@@ -291,16 +316,16 @@ function payment(method){
         if (limit==null || pending+total>limit) throw review('O limite disponível mudou. Confira o cadastro do cliente.');
       }
       const id=operationId;
-      next.sales.push({id,shift:next.cash.id,time:date(),items,total,payments,due:v.due,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
+      next.sales.push({id,shift:next.cash.id,time:date(),items,total,fee,payments,due:v.due,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
       if(v.method==='A prazo')next.bills.push({id:crypto.randomUUID(),kind:'receber',party:customer.id,description:'Venda '+id.slice(0,8),amount:total,due:v.due,paid:null});
     },true);
-    cart={};
+    cart={};counterService=false;
     notice(v.method==='Dinheiro'?'Venda registrada. Troco '+money(given-total):'Venda registrada.');
     return {receipt:data.sales.find(s=>s.id===operationId)};
   },'Confirmar venda');
   const sync=()=>{
     const type=dialog.querySelector('[name=method]').value;
-    $('#payment-extra').innerHTML=type==='Dividido'?splitMethods.map((m,i)=>amount(m,'part'+i,'0')).join(''):type==='Dinheiro'?amount('Valor recebido','given',(total/100).toFixed(2),'.01')+
+    $('#payment-extra').innerHTML=type==='Dividido'?splitFields():type==='Dinheiro'?amount('Valor recebido','given',(total/100).toFixed(2),'.01')+
       '<p id="change"></p>':type==='A prazo'?select('Cliente','customer',customerOptions,'')+input('Vencimento','due','','date'):'';
     const received=dialog.querySelector('[name=given]');
     if(received){
@@ -325,10 +350,11 @@ function drawerBalance(state) {
 }
 function functionMenu() {
   dialog.innerHTML='<h2 id="function-title">Funções do caixa</h2><div class="function-table">'+
-    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],...cashFunctions.map(f=>[f.key,
+    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],['X','<button data-remove-shortcut>Retirar item do pedido</button>'],...cashFunctions.map(f=>[f.key,
       '<button type="button" data-function="'+f.key+'"><strong>'+f.name+'</strong><br>'+f.description+'</button>'])])+
     '</div><div class="actions"><button type="button" id="cancel">Voltar</button></div>';
   dialog.querySelector('#cancel').onclick=()=>dialog.close();
+  dialog.querySelector('[data-remove-shortcut]').onclick=()=>{dialog.close();removeItem();};
   dialog.querySelectorAll('[data-function]').forEach(button=>button.onclick=()=>{
     dialog.close();
     cashMovement(cashFunctions.find(f=>f.key===button.dataset.function));
@@ -368,6 +394,9 @@ document.addEventListener('keydown',e=>{
   if (!data || busy || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const menuOpen=dialog.open && dialog.querySelector('#function-title');
   if (document.querySelector('dialog[open]') && !menuOpen) return;
+  if(e.key.toLowerCase()==='x' && !e.target.closest('input,textarea,select,[contenteditable="true"]')){
+    e.preventDefault();if(menuOpen)dialog.close();removeItem();return;
+  }
   const fn=cashFunctions.find(f=>f.key===e.key);
   if (e.key==='F2' || fn) {
     e.preventDefault();
@@ -386,7 +415,7 @@ function cash(){
   const shift=data.cash, sales=data.sales.filter(s=>s.shift===shift.id);
   const expected=drawerBalance(data);
   fields('Fechar caixa',`<p>Abertura em ${stamp(shift.opened)}</p><p>Fundo inicial <strong>${money(shift.initial)}</strong></p>
-  ${methods.map(m=>`<p>${m} <strong>${money(tenderTotal(sales,m))}</strong></p>`).join('')}
+  ${[...methods,...(tenderTotal(sales,'Cartão')?['Cartão']:[])].map(m=>`<p>${m} <strong>${money(tenderTotal(sales,m))}</strong></p>`).join('')}
   <p>Suprimentos <strong>${money(movementTotal(shift,'Suprimento'))}</strong></p>
   <p>Sangrias <strong>${money(movementTotal(shift,'Sangria'))}</strong></p>
   <p>Dinheiro esperado <strong>${money(expected)}</strong></p>${amount('Dinheiro contado','counted')}`,async v=>{
@@ -410,7 +439,7 @@ function back(){
   if(tab==='Resumo'){
     content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
-    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
+    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.initial)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
   } else {
     const billCategory = ['fixos','impostos'].includes(tab) ? tab : null;
     const billKind = billCategory ? 'pagar' : tab;
@@ -421,7 +450,7 @@ function back(){
       content+=table(['Nome','Documento','Contato','Limite','Em aberto',''],data[tab].map(p=>[esc(p.name),esc(p.doc),esc(p.contact),money(p.limit),money(sum(data.bills.filter(b=>!b.paid&&b.party===p.id),'amount')),edit(tab,p.id)]));
     } else {
       content=`<p>Em aberto <strong>${money(sum(data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)&&!b.paid),'amount'))}</strong></p>`+content;
-      content+=table(['Descrição','Cliente / fornecedor','Vencimento','Valor','Situação',''],data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)).map(b=>[esc(b.description),esc(partyName(b)),esc(b.due.split('-').reverse().join('/')),money(b.amount),b.paid?'Liquidado em '+stamp(b.paid):'Em aberto',b.paid?'':edit(billKind,b.id)+` <button data-settle="${b.id}">${billKind==='pagar'?'Dar baixa no pagamento':'Dar baixa no recebimento'}</button>`]));
+      content+=table(['Descrição','Cliente / fornecedor','Vencimento','Valor','Situação',''],data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)).map(b=>[esc(b.description),esc(partyName(b)),esc(b.due.split('-').reverse().join('/')),money(b.amount),b.paid?'Liquidado em '+stamp(b.paid)+(b.payments||[]).map(p=>'<br>'+esc(p.method)+' '+money(p.amount)).join(''):'Em aberto',b.paid?'':edit(billKind,b.id)+` <button data-settle="${b.id}">${billKind==='pagar'?'Dar baixa no pagamento':'Dar baixa no recebimento'}</button>`]));
     }
   }
   app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="panel">${content}</div></section>`;
@@ -436,7 +465,7 @@ function record(key,id,billCategory){
   if(isBill){
     html=(key==='pagar'?select('Classificação','category',[['geral','Geral'],['fixos','Custos fixos'],['impostos','Impostos']],old?.category||billCategory||'geral'):'')+select(key==='pagar'?'Fornecedor':'Cliente','party',(key==='pagar'?[['','Sem fornecedor'],...parties.map(p=>[p.id,p.name])]:parties.map(p=>[p.id,p.name])),old?.party).replace(key==='pagar'?' required':'__unused__','')+input('Descrição','description',old?.description)+amount('Valor','amount',old?old.amount/100:'','.01')+input('Vencimento','due',old?.due,'date');
   } else if(key==='products'){
-    html=input('Nome','name',old?.name)+select('Categoria','category',["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>[c,c]),old?.category)+amount('Preço','price',old?old.price/100:'','.01')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
+    html=input('Nome','name',old?.name)+input('Código de barras','barcode',old?.barcode,'text','maxlength="80"')+select('Categoria','category',["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>[c,c]),old?.category)+amount('Preço','price',old?old.price/100:'','.01')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
   } else {
     html=input('Nome','name',old?.name)+input('CPF / CNPJ','doc',old?.doc,'text','')+input('Telefone ou e-mail','contact',old?.contact,'text','')+amount('Limite de crédito','limit',old?old.limit/100:'0');
   }
@@ -450,6 +479,8 @@ function record(key,id,billCategory){
       const open=sum(data.bills.filter(b=>b.id!==id&&b.party===v.party&&b.kind===key&&!b.paid),'amount');
       if(key==='receber'&&open+v.amount>limit)throw new Error('O lançamento excede o limite de crédito disponível.');
     } else if(key==='products'){
+      v.barcode=v.barcode.trim();
+      if(v.barcode && data.products.some(p=>p.id!==id && p.barcode===v.barcode)) throw Error('Código de barras já cadastrado.');
       v.price=cents(v.price);v.image=v.image===''?null:Number(v.image);
     } else {
       v.limit=cents(v.limit);
@@ -462,6 +493,56 @@ function record(key,id,billCategory){
     });
     notice('Cadastro salvo.');
   });
+}
+function settleBill(id){
+  const bill=data.bills.find(b=>b.id===id);
+  fields('Liquidar conta','<p>'+esc(bill.description)+' · '+money(bill.amount)+'</p>'+
+    paymentChoices(splitMethods)+'<div id="payment-extra"></div>',async v=>{
+    const payments=tenderParts(v,bill.amount);
+    await save(next=>{
+      const current=next.bills.find(b=>b.id===id);
+      if(current.paid || current.amount!==bill.amount) throw review('Confira a conta atualizada.');
+      Object.assign(current,{paid:date(),payments});
+    });
+  },'Confirmar baixa');
+  bindSplitFields();
+}
+function toggleService(){
+  if(!selectedTable){counterService=!counterService;render();return;}
+  const t=tableOrder(), enabled=!t.service;
+  fields('Serviço de 10%','<p>'+ (enabled?'Incluir':'Retirar')+' a taxa sobre o consumo da mesa '+esc(t.id)+'?</p>',async()=>{
+    await save(next=>{
+      const current=sameTable(next,t);
+      current.service=enabled;
+      if(tableTotal(current)<tablePaid(current)) throw Error('A alteração deixaria o total abaixo do valor já pago.');
+    });
+  });
+}
+function removeItem(preselected){
+  if(view!=='sales'){notice('Abra um pedido para retirar um item.');return;}
+  const t=selectedTable?tableOrder():null;
+  const choices=order().map(i=>['cart:'+i.id,'Pedido · '+i.qty+' × '+i.name]);
+  (t?.items||[]).forEach((i,index)=>choices.push(['saved:'+index,'Comanda · '+i.qty+' × '+i.name]));
+  if(!choices.length){notice('Pedido sem itens.');return;}
+  fields('Retirar uma unidade',select('Item','line',choices,preselected||choices[0][0])+
+    input('Inicial do responsável','initial','','text','required maxlength="1"'),async v=>{
+    const initial=v.initial.trim().toLocaleUpperCase('pt-BR');
+    if(!/^\p{L}$/u.test(initial)) throw Error('Informe a inicial do responsável.');
+    const saved=v.line.startsWith('saved:'), key=v.line.slice(v.line.indexOf(':')+1);
+    const item=saved?t.items[Number(key)]:order().find(i=>i.id===key);
+    await save(next=>{
+      if(saved){
+        const current=sameTable(next,t);
+        if(JSON.stringify(current.items)!==JSON.stringify(t.items)) throw review('A comanda mudou. Selecione o item novamente.');
+        const line=current.items[Number(key)];
+        line.qty--;line.total-=line.price;
+        if(!line.qty) current.items.splice(Number(key),1);
+        if(tableTotal(current)<tablePaid(current)) throw Error('A retirada deixaria o total abaixo do valor já pago.');
+      }
+      (next.itemRemovals??=[]).push({time:date(),initial,table:t?.id,name:item.name,price:item.price});
+    },true);
+    if(!saved){cart[key]--;if(!order().length) counterService=false;}
+  },'Retirar uma unidade');
 }
 function render(){
   if (selectedTable && (!tableOrder()?.opened || tableOrder().opened!==selectedOpening)) selectedTable=null;
@@ -490,13 +571,13 @@ document.addEventListener('click',e=>{
   if(d.tab){tab=d.tab;render();}
   if(d.category){category=d.category;search='';render();}
   if(d.add){cart[d.add]=(cart[d.add]||0)+1;render();}
-  if(d.minus){cart[d.minus]--;render();}
+  if(d.minus)removeItem('cart:'+d.minus);
+  if(d.removeSaved!==undefined)removeItem('saved:'+d.removeSaved);
+  if(d.fee!==undefined)toggleService();
   if(d.pay!==undefined)payment(d.pay);
   if(button.id==='cash'||d.cash!==undefined)cash();
   if(d.edit)record(d.edit,d.id,d.categoryBill);
-  if(d.settle)fields('Confirmar baixa','<p>O título será marcado como liquidado na data de hoje. A baixa não entra no caixa de vendas.</p>',async ()=>{
-    await save(next=>next.bills.find(b=>b.id===d.settle).paid=date());notice('Baixa registrada.');
-  },'Confirmar baixa');
+  if(d.settle)settleBill(d.settle);
   if(d.backup!==undefined){
     const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download='casa-rosa-dados.json';link.click();
