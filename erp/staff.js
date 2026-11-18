@@ -14,9 +14,9 @@ function amount(value, min=0) {
   if (!Number.isSafeInteger(value) || value<min || value>9999999900) fail('Valor inválido.');
   return value;
 }
-const balance = employee => employee.entries.reduce((sum,e)=>sum+(e.kind==='vale'?e.amount:-e.amount),0);
+const balance = (employee,type) => employee.entries.filter(e=>(e.type||'cash')===type).reduce((sum,e)=>sum+(e.kind==='vale'?e.amount:-e.amount),0);
 const empty = () => ({users:[],employees:[]});
-module.exports = function staffStore(pool,folder) {
+module.exports = function staffStore(pool,folder,localSales) {
   const file=path.join(folder,'equipe.json');
   const owner=process.env.CASA_ROSA_USUARIO || 'sara';
   const ownerPassword=process.env.CASA_ROSA_SENHA;
@@ -43,8 +43,33 @@ module.exports = function staffStore(pool,folder) {
     const key=await derive(password,u.salt,32);
     return crypto.timingSafeEqual(key,Buffer.from(u.key,'hex'))?{login:u.login,name:u.name,admin:u.admin}:null;
   }
-  function visible(state) {
-    return {users:state.users.map(({login,name,active,admin})=>({login,name,active,admin})),employees:state.employees};
+  function withPurchases(employee,sales){
+    const purchases=sales.filter(s=>s.employeeId===employee.id && s.method==='Vale em compras').map(s=>({
+      id:s.id,kind:'vale',type:'purchase',amount:s.total,time:s.time,operator:s.operator||'',note:'Venda '+s.id.slice(0,8)
+    }));
+    return {...employee,entries:[...employee.entries,...purchases].sort((a,b)=>a.time.localeCompare(b.time))};
+  }
+  async function readSales(client){
+    if(!pool)return localSales();
+    const result=await client.query("SELECT payload->'sales' AS sales FROM casa_rosa_state WHERE id=1");
+    return result.rows[0].sales;
+  }
+  function authorizePurchases(state,sales,added,actor){
+    for(const sale of added){
+      const employee=state.employees.find(e=>e.id===sale.employeeId);
+      if(!employee)fail('Selecione um funcionário cadastrado.');
+      const used=balance(withPurchases(employee,sales),'purchase');
+      if(amount(sale.total,1)>(employee.purchaseLimit||0)-used)fail('A compra excede o limite de vale em compras.');
+      sale.customer=employee.name;sale.operator=actor.login;
+      sales.push(sale);
+    }
+  }
+  async function checkPurchases(client,sales,added,actor){
+    const state=client?(await client.query('SELECT payload FROM casa_rosa_equipe WHERE id=1 FOR UPDATE')).rows[0].payload:localRead();
+    authorizePurchases(state,[...sales],added,actor);
+  }
+  function visible(state,sales) {
+    return {users:state.users.map(({login,name,active,admin})=>({login,name,active,admin})),employees:state.employees.map(e=>withPurchases(e,sales))};
   }
   async function change(command,actor) {
     const {action,id}=command;
@@ -56,7 +81,7 @@ module.exports = function staffStore(pool,folder) {
       const salt=crypto.randomBytes(16).toString('hex');
       credentials={salt,key:(await derive(command.password,salt,32)).toString('hex')};
     }
-    function apply(state) {
+    function apply(state,sales) {
       if(action==='user') {
         const login=label(command.login,64).toLowerCase();
         if(!/^[a-z0-9._-]+$/.test(login) || (ownerPassword && login===owner.toLowerCase())) fail('Escolha outro login.');
@@ -74,32 +99,36 @@ module.exports = function staffStore(pool,folder) {
         if(command.employee && !e) fail('Funcionário não encontrado.');
         if(!e){e={id,entries:[]};state.employees.push(e);}
         const limit=amount(command.limit);
-        if(limit<balance(e)) fail('O limite é menor que o saldo em aberto.');
-        Object.assign(e,{name:label(command.name,100),role:label(command.role,80,false),limit});
+        const purchaseLimit=amount(command.purchaseLimit??e.purchaseLimit??0);
+        if(limit<balance(e,'cash') || purchaseLimit<balance(withPurchases(e,sales),'purchase')) fail('O limite é menor que o saldo em aberto.');
+        Object.assign(e,{name:label(command.name,100),role:label(command.role,80,false),limit,purchaseLimit});
       } else if(action==='vale' || action==='baixa') {
         const e=state.employees.find(e=>e.id===command.employee);
         if(!e) fail('Funcionário não encontrado.');
         if(e.entries.some(entry=>entry.id===id)) return;
-        const value=amount(command.amount,1), open=balance(e);
+        const type=command.type||'cash';
+        if(!['cash','purchase'].includes(type) || (action==='vale' && type==='purchase'))fail('Lance o vale em compras pela venda.');
+        const value=amount(command.amount,1), open=balance(withPurchases(e,sales),type);
         if(action==='vale' && value>e.limit-open) fail('O valor excede o limite disponível.');
         if(action==='baixa' && value>open) fail('A baixa excede o saldo em aberto.');
-        e.entries.push({id,kind:action,amount:value,note:label(command.note,160),time:new Date().toISOString(),operator:actor.login});
+        e.entries.push({id,kind:action,type,amount:value,note:label(command.note,160),time:new Date().toISOString(),operator:actor.login});
       } else fail('Operação desconhecida.');
     }
     if(!pool){
-      const state=localRead();apply(state);
+      const state=localRead(), sales=localSales();apply(state,sales);
       fs.writeFileSync(file+'.tmp',JSON.stringify(state),{mode:0o600});fs.renameSync(file+'.tmp',file);
-      return visible(state);
+      return visible(state,sales);
     }
     const client=await pool.connect();
     try {
       await client.query('BEGIN');
       const state=(await client.query('SELECT payload FROM casa_rosa_equipe WHERE id=1 FOR UPDATE')).rows[0].payload;
-      apply(state);
+      const sales=await readSales(client);
+      apply(state,sales);
       await client.query('UPDATE casa_rosa_equipe SET payload=$1 WHERE id=1',[JSON.stringify(state)]);
       await client.query('COMMIT');
-      return visible(state);
+      return visible(state,sales);
     } catch(e){await client.query('ROLLBACK');throw e;} finally {client.release();}
   }
-  return {init,authenticate,change,listing:async()=>visible(await read())};
+  return {init,authenticate,change,checkPurchases,directory:async()=>(await read()).employees.map(({id,name})=>({id,name})),listing:async()=>visible(await read(),await readSales(pool))};
 };

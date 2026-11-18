@@ -311,7 +311,7 @@ initial.company = {name: "Casa Rosa Açaí"};
 initial.tables = Array.from({length:10}, (_,i)=>({id:String(i+1),name:'',opened:null,items:[],payments:[]}));
 initial.closedTables=[];
 let state = fs.existsSync(database) ? JSON.parse(fs.readFileSync(database, 'utf8')) : initial;
-const staff=require('./staff')(pool,folder);
+const staff=require('./staff')(pool,folder,()=>state.sales);
 const creditRules=require('./public/credit');
 const files = {
   '/credit.js':['credit.js','text/javascript'],
@@ -330,6 +330,9 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(value));
   };
   const url = req.url.split('?')[0];
+  if(url==='/api/funcionarios' && req.method==='GET'){
+    try{return reply(200,await staff.directory());}catch{return reply(503,{error:'Lista de funcionários indisponível.'});}
+  }
   if(url==='/api/sessao') return reply(200,actor);
   if(url==='/api/equipe') {
     if(!actor.admin) return reply(403,{error:'Acesso exclusivo da administração.'});
@@ -389,18 +392,28 @@ const server = http.createServer(async (req, res) => {
       }
       const previousRev = next.rev;
       next.rev++;
+      const purchases=next.sales.filter(s=>!existing.has(s.id) && s.method==='Vale em compras');
       if (pool) {
-        const result = await pool.query(
-          "UPDATE casa_rosa_state SET payload = $1::jsonb WHERE id = 1 AND (payload->>'rev')::bigint = $2 RETURNING payload",
-          [JSON.stringify(next), previousRev]);
-        if (!result.rowCount) return reply(409, { error: 'Os dados mudaram em outra tela. Atualize a página.' });
-        return reply(200, result.rows[0].payload);
+        const client=await pool.connect();
+        try {
+          await client.query('BEGIN');
+          if(purchases.length)await staff.checkPurchases(client,current.sales,purchases,actor);
+          const result=await client.query("UPDATE casa_rosa_state SET payload=$1::jsonb WHERE id=1 AND (payload->>'rev')::bigint=$2 RETURNING payload",[JSON.stringify(next),previousRev]);
+          if(!result.rowCount)throw Object.assign(Error('O caixa foi atualizado em outro aparelho.'),{status:409});
+          await client.query('COMMIT');
+          return reply(200,result.rows[0].payload);
+        }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+      }
+      if(purchases.length){
+        await staff.checkPurchases(null,current.sales,purchases,actor);
+        if(state.rev!==previousRev)return reply(409,{error:'O caixa foi atualizado em outro aparelho.'});
       }
       fs.writeFileSync(database + '.tmp', JSON.stringify(next, null, 2));
       fs.renameSync(database + '.tmp', database);
       state = next;
       return reply(200, state);
     } catch (error) {
+      if(error.status)return reply(error.status,{error:error.message});
       console.error(error);
       return reply(500, { error: 'Falha ao salvar os dados.' });
     }
