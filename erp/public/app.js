@@ -330,6 +330,10 @@ function payment(method){
         $('#credit-status').textContent=overdue?'Crédito bloqueado · conta vencida em '+overdue.due.split('-').reverse().join('/'):'Disponível para compra: '+money(available);
       };
     }
+    if(type!=='A prazo'){
+      const choices=[['','Sem identificação'],...data.customers.map(c=>[c.id,c.name])];
+      $('#payment-extra').insertAdjacentHTML('beforeend',select('Cliente (opcional)','customer',choices,'').replace(' required',''));
+    }
     const received=dialog.querySelector('[name=given]');
     if(received){
       const update=()=>$('#change').textContent='Troco '+money(Math.max(0,cents(received.value)-total));
@@ -568,18 +572,21 @@ function receiveCredit(id){
   if(!bills.length){notice('Nenhuma conta a receber em aberto.');return;}
   const groups=id?[[bills[0].party,partyName(bills[0])||'Cliente']]:data.customers.filter(c=>bills.some(b=>b.party===c.id)).map(c=>[c.id,c.name]);
   if(!groups.length){notice('Nenhum cliente cadastrado com saldo em aberto.');return;}
-  const accounts=(list,party)=>list.filter(b=>b.kind==='receber' && b.party===party && (!id || b.id===id) && creditRules.remaining(b)>0)
+  const full=party=>creditRules.collectionPolicy(data,party).full;
+  const accounts=(list,party)=>list.filter(b=>b.kind==='receber' && b.party===party && (!id || full(party) || b.id===id) && creditRules.remaining(b)>0)
     .sort((a,b)=>a.due.localeCompare(b.due)||a.id.localeCompare(b.id));
   const balance=list=>list.reduce((n,b)=>n+creditRules.remaining(b),0);
-  const options=groups.map(([key,name])=>[key,name+' · '+money(balance(accounts(bills,key)))]);
+  const options=groups.map(([key,name])=>[key,name+' · '+money(balance(accounts(data.bills,key)))]);
   fields('Receber fiado',select('Cliente','party',options,options[0][0])+
-    '<p id="credit-bills"></p>'+amount('Valor a receber (R$)','amount','','.01')+
+    '<p id="credit-bills"></p><p id="collection-policy"></p>'+amount('Valor a receber (R$)','amount','','.01')+
     paymentChoices(splitMethods)+'<div id="payment-extra"></div><p id="credit-remaining"></p>',async v=>{
-    const shown=accounts(bills,v.party), value=cents(v.amount);
+    const shown=accounts(data.bills,v.party), value=cents(v.amount);
     if(!Number.isSafeInteger(value) || value<=0 || value>balance(shown)) throw Error('Informe um valor entre R$ 0,01 e o saldo do cliente.');
+    creditRules.checkCollection(data,v.party,value);
     const payments=tenderParts(v,value);
     await save(next=>{
       checkShift(next,shift);
+      creditRules.checkCollection(next,v.party,value);
       const current=accounts(next.bills,v.party);
       if(current.length!==shown.length || current.some((b,i)=>b.id!==shown[i].id || b.due!==shown[i].due || creditRules.remaining(b)!==creditRules.remaining(shown[i])))
         throw review('As contas do cliente mudaram. Confira o saldo antes de receber.');
@@ -605,10 +612,13 @@ function receiveCredit(id){
   },'Confirmar recebimento');
   bindSplitFields();
   const picker=dialog.querySelector('[name=party]'), field=dialog.querySelector('[name=amount]');
-  const selected=()=>accounts(bills,picker.value);
+  const selected=()=>accounts(data.bills,picker.value);
   const preview=()=>{$('#credit-remaining').textContent='Saldo após receber: '+money(Math.max(0,balance(selected())-(cents(field.value)||0)));};
   picker.onchange=()=>{
     const list=selected();
+    const policy=creditRules.collectionPolicy(data,picker.value);
+    field.readOnly=policy.full;
+    $('#collection-policy').textContent=policy.full?'Última compra em '+policy.last.split('-').reverse().join('/')+'. É necessário quitar o saldo integral.':'Recebimento parcial ou integral.';
     field.max=field.value=(balance(list)/100).toFixed(2);
     $('#credit-bills').textContent=list.map(b=>b.due.split('-').reverse().join('/')+' · '+money(creditRules.remaining(b))).join(' | ');
     preview();

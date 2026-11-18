@@ -35,6 +35,26 @@ const creditRules = (() => {
     if(!/^\d{4}-\d{2}-\d{2}$/.test(due) || due<day || (agreed && agreed!==due))
       throw Error('Confira o vencimento conforme o acerto do cliente.');
   }
-  return {today,nextDue,status,check,remaining};
+  function collectionPolicy(state,party,day=today()) {
+    const bills=state.bills.filter(b=>b.kind==='receber' && b.party===party);
+    const linked=new Set(bills.map(b=>b.saleId).filter(Boolean));
+    const legacy=new Set(bills.filter(b=>!b.saleId).map(b=>b.description));
+    let latest=0;
+    for(const sale of state.sales){
+      if(sale.partial) continue;
+      const matches=sale.customerId ? sale.customerId===party :
+        linked.has(sale.id) || (sale.method==='A prazo' && legacy.has('Venda '+sale.id.slice(0,8)));
+      const time=Date.parse(sale.time);
+      if(matches && time>latest) latest=time;
+    }
+    const last=latest?calendar.format(new Date(latest)):null;
+    const days=last?(Date.parse(day)-Date.parse(last))/86400000:null;
+    return {last,full:days!==null && days>20,total:bills.reduce((n,b)=>n+remaining(b),0)};
+  }
+  function checkCollection(state,party,value,day=today()){
+    const rule=collectionPolicy(state,party,day);
+    if(rule.full && value!==rule.total) throw Error('Mais de 20 dias sem compra. Receba o saldo integral do cliente.');
+  }
+  return {today,nextDue,status,check,remaining,collectionPolicy,checkCollection};
 })();
 if(typeof module!=='undefined') module.exports=creditRules;

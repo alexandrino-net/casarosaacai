@@ -371,6 +371,12 @@ const server = http.createServer(async (req, res) => {
       // Requests from older tills also pass the same credit checks before the revision-guarded write.
       const current=pool?(await pool.query('SELECT payload FROM casa_rosa_state WHERE id=1')).rows[0].payload:state;
       if(current.rev!==next.rev) return reply(409,{error:'O caixa foi atualizado em outro aparelho.'});
+      const knownCollections=new Set((current.cash?.collections||[]).map(r=>r.id));
+      for(const receipt of next.cash?.collections||[]){
+        if(knownCollections.has(receipt.id)) continue;
+        try {creditRules.checkCollection(current,receipt.party,receipt.total);}
+        catch(error){return reply(400,{error:error.message});}
+      }
       const existing=new Set(current.sales.map(s=>s.id));
       const checked={...current,bills:[...current.bills]};
       for(const sale of next.sales){
