@@ -22,6 +22,33 @@ async function save(change) {
   if(!response.ok) throw new Error(result.error);
   data=result;
 }
+function showReceipt(sale) {
+  const row = (label, value) => '<div class="receipt-row"><span>'+esc(label)+'</span><b>'+esc(value)+'</b></div>';
+  const payments = sale.payments || [{method:sale.method, amount:sale.total}];
+  const venue = sale.table ? 'Mesa '+sale.table : 'Balcão';
+  const items = sale.items.map(item => '<li><strong>'+esc(item.name)+'</strong>'+
+    row(item.qty+' × '+money(item.price),money(item.total))+'</li>').join('');
+  const paper = '<article class="receipt-paper"><div class="receipt-brand"><img src="/img/6.jpg" alt="">'+
+    '<h2 id="receipt-title">Casa Rosa Açaí</h2><p>CNPJ 60.403.009/0001-75<br>Rua Lodonio Almeida, 139 · Centro<br>Itacaré – BA</p></div>'+
+    '<h3>Comprovante de venda</h3>'+row('Nº',sale.id.slice(0,8).toUpperCase())+
+    row('Data',new Date(sale.time).toLocaleString('pt-BR',{timeZone:'America/Bahia'}))+
+    row('Atendimento',venue)+(sale.customer?row('Cliente / identificação',sale.customer):'')+
+    '<ul>'+items+'</ul><div class="receipt-total">'+row('TOTAL',money(sale.total))+'</div>'+
+    payments.map(p=>row(p.method,money(p.amount))).join('')+
+    (sale.given!=null?row('Recebido',money(sale.given))+row('Troco',money(sale.given-sale.total)):'')+
+    (sale.due?row('Vencimento',sale.due.split('-').reverse().join('/')):'')+
+    '<footer>Obrigada pela visita!<br><small>Comprovante não fiscal</small></footer></article>';
+  const receipt = document.createElement('dialog');
+  receipt.className='receipt-dialog';
+  receipt.setAttribute('aria-labelledby','receipt-title');
+  receipt.innerHTML=paper+'<div class="receipt-actions"><button type="button">Fechar</button><button type="button" class="primary">Imprimir cupom</button></div>';
+  document.body.append(receipt);
+  receipt.querySelector('.receipt-actions button').onclick=()=>receipt.close();
+  receipt.querySelector('.primary').onclick=()=>window.print();
+  receipt.addEventListener('close',()=>receipt.remove(),{once:true});
+  receipt.showModal();
+}
+
 function fields(title, html, action, submit='Salvar') {
   if(busy) return;
   dialog.innerHTML=`<form><h2>${title}</h2>${html}<div class="actions"><button type="button" id="cancel">Voltar</button><button class="primary">${submit}</button></div></form>`;
@@ -34,9 +61,10 @@ function fields(title, html, action, submit='Salvar') {
     buttons.forEach(b=>b.disabled=true);
     try {
       const values=Object.fromEntries(new FormData(event.currentTarget));
-      await action(values);
+      const result = await action(values);
       dialog.close();
       render();
+      if (result?.receipt) showReceipt(result.receipt);
     } catch(error){notice(error.message);}
     finally {busy=false;buttons.forEach(b=>b.disabled=false);}
   };
@@ -126,10 +154,12 @@ function closeTable() {
   fields('Encerrar mesa '+t.id,'<p>A comanda será arquivada e a mesa ficará livre.</p>',async()=>{
     await save(next=>{
       const table=next.tables.find(t=>t.id===selectedTable);
-      next.closedTables.push({...structuredClone(table),closed:date()});
+      next.closedTables.push({...structuredClone(table),id:table.id,receiptId:crypto.randomUUID(),closed:date()});
       Object.assign(table,{name:'',opened:null,items:[],payments:[]});
     });
+    const closed=data.closedTables.at(-1);
     selectedTable=null;view='tables';
+    return {receipt:{id:closed.receiptId,time:closed.closed,table:closed.id,customer:closed.name,items:closed.items,payments:closed.payments,total:tableTotal(closed)}};
   },'Encerrar mesa');
 }
 function sales(){
@@ -184,11 +214,12 @@ function payment(method){
     }
     await save(next=>{
       const id=crypto.randomUUID();
-      next.sales.push({id,shift:next.cash.id,time:date(),items,total,payments,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
+      next.sales.push({id,shift:next.cash.id,time:date(),items,total,payments,due:v.due,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
       if(v.method==='A prazo')next.bills.push({id:crypto.randomUUID(),kind:'receber',party:customer.id,description:'Venda '+id.slice(0,8),amount:total,due:v.due,paid:null});
     });
     cart={};
     notice(v.method==='Dinheiro'?'Venda registrada. Troco '+money(given-total):'Venda registrada.');
+    return {receipt:data.sales.at(-1)};
   },'Confirmar venda');
   const sync=()=>{
     const type=dialog.querySelector('[name=method]').value;

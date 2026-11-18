@@ -70,3 +70,20 @@ h2{font-size:clamp(21px,1.9vw,28px)}
 }
 @media(max-width:1000px){.table-map{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.table-map{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.table-balance{margin-top:14px}.order button{min-height:44px}}
+
+.receipt-dialog{box-sizing:border-box;width:min(420px,94vw);max-height:92dvh;overflow:auto;padding:16px;border:0;background:#f2e8ed}
+.receipt-paper{background:#fffdf8;color:#342731;padding:24px 20px 30px;font:14px/1.45 ui-monospace,monospace;overflow-wrap:anywhere;clip-path:polygon(0 0,100% 0,100% 100%,0 100%);mask:linear-gradient(#000 0 0) top/100% calc(100% - 6px) no-repeat,conic-gradient(from -45deg at 50% 100%,#000 90deg,transparent 0) bottom/12px 7px repeat-x}
+.receipt-brand,.receipt-paper h3,.receipt-paper footer{text-align:center}
+.receipt-brand img{width:62px;height:62px;object-fit:contain}
+.receipt-brand h2{margin:4px 0;color:#67284b}.receipt-brand p{font-size:12px}
+.receipt-paper h3,.receipt-paper ul,.receipt-paper footer{border-top:1px dashed #a28d98;padding-top:12px}
+.receipt-paper ul{list-style:none;padding-left:0}.receipt-paper li{margin-bottom:8px}
+.receipt-row,.receipt-actions{display:flex;justify-content:space-between;gap:12px}.receipt-row b{text-align:right}
+.receipt-total{font-size:20px;margin:12px 0;font-weight:bold}.receipt-paper footer,.receipt-actions{margin-top:16px}
+@media print{
+ body:has(.receipt-dialog[open]){background:white!important;display:block!important;height:auto!important;overflow:visible!important;margin:0!important}
+ body:has(.receipt-dialog[open]) > :not(.receipt-dialog){display:none!important}
+ .receipt-dialog[open]{position:static!important;display:block!important;width:min(76mm,100%)!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0 auto!important;padding:0!important;border:0;box-shadow:none;background:white}
+ .receipt-dialog::backdrop,.receipt-actions{display:none!important}
+ .receipt-paper{padding:2mm;background:white;color:black;font-size:10pt;mask:none;clip-path:none}.receipt-paper li,.receipt-row{break-inside:avoid}
+}
