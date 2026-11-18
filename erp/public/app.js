@@ -8,19 +8,59 @@ const stamp = value => new Date(value).toLocaleString('pt-BR');
 let data, busy=false, view='sales', tab='Resumo', category='Açaí', search='', cart={};
 const app=$('#app'), dialog=$('#dialog');
 let timer;
-let selectedTable = null;
+let selectedTable = null, selectedOpening = null;
 function notice(message) {
   $('#notice').textContent=message;
   clearTimeout(timer);
   timer=setTimeout(()=>$('#notice').textContent='',6000);
 }
-async function save(change) {
-  const next=structuredClone(data);
-  change(next);
-  const response=await fetch('/api/dados',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)});
-  const result=await response.json();
-  if(!response.ok) throw new Error(result.error);
-  data=result;
+function prepareState(state) {
+  state.tables ??= Array.from({length:10}, (_,i)=>({id:String(i+1),name:'',opened:null,items:[],payments:[]}));
+  state.closedTables ??= [];
+  return state;
+}
+async function loadState() {
+  const response = await fetch('/api/dados', {cache:'no-store'});
+  if (!response.ok) throw Error('Não foi possível consultar o caixa.');
+  return prepareState(await response.json());
+}
+let operationId;
+async function save(change, retry = false) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // A lost response can leave the form open after a successful write.
+    if (data.operations?.includes(operationId)) return;
+    const next = structuredClone(data);
+    change(next);
+    next.operations = [...(next.operations || []).slice(-1023), operationId];
+    let response;
+    try {
+      response = await fetch('/api/dados', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(next)});
+      if (response.ok) { data = prepareState(await response.json()); return; }
+    } catch {
+      data = await loadState();
+      if (data.operations?.includes(operationId)) return;
+      throw Error('Falha na conexão. Confira o pedido e tente novamente.');
+    }
+    if (response.status !== 409) throw Error((await response.json()).error);
+    data = await loadState();
+    if (data.operations?.includes(operationId)) return;
+    if (!retry) throw review('Os dados foram atualizados. Confira e abra a operação novamente.');
+  }
+  throw Error('Caixa movimentado. Seu pedido continua na tela. Tente confirmar novamente.');
+}
+function review(message) {
+  return Object.assign(new Error(message), {review:true});
+}
+function sameTable(next, expected) {
+  const current = next.tables.find(t=>t.id===expected.id);
+  if (!current || current.opened !== expected.opened) {
+    if (selectedTable === expected.id) selectedTable = null;
+    throw review('A ocupação da mesa mudou. Confira a mesa antes de continuar.');
+  }
+  return current;
+}
+function checkShift(next, shift) {
+  if (!shift || next.cash?.id !== shift.id) throw review('O turno do caixa mudou. Confira antes de receber.');
 }
 function showReceipt(sale) {
   const row = (label, value) => '<div class="receipt-row"><span>'+esc(label)+'</span><b>'+esc(value)+'</b></div>';
@@ -51,6 +91,7 @@ function showReceipt(sale) {
 
 function fields(title, html, action, submit='Salvar') {
   if(busy) return;
+  operationId=crypto.randomUUID();
   dialog.innerHTML=`<form><h2>${title}</h2>${html}<div class="actions"><button type="button" id="cancel">Voltar</button><button class="primary">${submit}</button></div></form>`;
   dialog.querySelector('#cancel').onclick=()=>dialog.close();
   dialog.querySelector('form').onsubmit=async event=>{
@@ -65,7 +106,7 @@ function fields(title, html, action, submit='Salvar') {
       dialog.close();
       render();
       if (result?.receipt) showReceipt(result.receipt);
-    } catch(error){notice(error.message);}
+    } catch(error){if(error.review){dialog.close();render();}notice(error.message);}
     finally {busy=false;buttons.forEach(b=>b.disabled=false);}
   };
   dialog.showModal();
@@ -109,29 +150,42 @@ function tables() {
     }).join('') + '</div></section>';
 }
 function openTable(id) {
-  selectedTable = id;
-  view = 'sales';
-  cart = {};
-  const t = tableOrder();
-  if (!t.opened) {
-    fields('Abrir mesa ' + id, input('Nome da mesa / cliente','name','','text','maxlength="100"'), async v => {
-      await save(next => Object.assign(next.tables.find(t => t.id === id),
-        {name:v.name.trim(),opened:date(),items:[],payments:[]}));
-    },'Abrir mesa');
-  }
-  render();
+  const t = data.tables.find(table=>table.id===id);
+  const enter = () => { selectedTable=id; selectedOpening=tableOrder().opened; view='sales'; };
+  if (t.opened) { enter(); render(); return; }
+  fields('Abrir mesa ' + id, input('Nome da mesa / cliente','name','','text','maxlength="100"'), async v => {
+    await save(next => Object.assign(sameTable(next,t), {name:v.name.trim(),opened:date()}), true);
+    enter();
+  },'Abrir mesa');
 }
-function addTableItems() {
+function sendToTable() {
   const items = order();
   if (!items.length) return;
+  const available = data.tables;
+  const choices = [['','Escolha a mesa'], ...available.map(t=>[t.id,'Mesa '+t.id+' — '+(t.opened?(t.name||'Ocupada'):'Livre')])];
+  fields('Enviar pedido para mesa',select('Mesa','table',choices,'')+
+    input('Nome do cliente (mesa livre)','name','','text','maxlength="100"'), async values=>{
+    const target = available.find(t=>t.id===values.table);
+    await save(next=>{
+      const table = sameTable(next,target);
+      if (!table.opened) Object.assign(table,{opened:date(),name:values.name.trim()});
+      table.items.push(...items);
+    },true);
+    cart={}; selectedTable=target.id; selectedOpening=tableOrder().opened;
+    notice('Pedido enviado à mesa '+target.id+'.');
+  },'Enviar pedido');
+}
+function addTableItems() {
+  const items = order(), target = tableOrder();
+  if (!items.length) return;
   fields('Salvar pedido da mesa', '<p>Os itens serão adicionados à comanda.</p>', async () => {
-    await save(next => next.tables.find(t => t.id === selectedTable).items.push(...items));
+    await save(next => sameTable(next,target).items.push(...items),true);
     cart = {};
   }, 'Salvar pedido');
 }
 function receiveTable() {
   const t = tableOrder();
-  const balance = tableTotal(t)-tablePaid(t);
+  const balance = tableTotal(t)-tablePaid(t), shift=data.cash;
   if (order().length) { notice('Salve os novos itens antes de receber.'); return; }
   if (!data.cash) { cash(); return; }
   if (balance <= 0) { notice('Mesa sem saldo pendente.'); return; }
@@ -143,12 +197,15 @@ function receiveTable() {
       if (!Number.isSafeInteger(value) || value <= 0 || value > balance)
         throw Error('Informe um valor entre R$ 0,01 e o saldo da mesa.');
       await save(next => {
-        const table = next.tables.find(t=>t.id===selectedTable);
+        checkShift(next,shift);
+        const table = sameTable(next,t);
+        if (tablePaid(table)!==tablePaid(t) || value>tableTotal(table)-tablePaid(table))
+          throw review('A mesa recebeu outro pagamento. Confira o saldo atualizado.');
         const receipt={id:crypto.randomUUID(),amount:value,method:v.method,time:date(),shift:next.cash.id};
         table.payments.push(receipt);
         next.sales.push({id:receipt.id,shift:receipt.shift,time:receipt.time,items:[],
           total:value,method:v.method,customer:table.name,table:table.id,partial:true});
-      });
+      },true);
       notice('Pagamento registrado no caixa.');
     },'Registrar pagamento');
 }
@@ -159,11 +216,13 @@ function closeTable() {
   }
   fields('Encerrar mesa '+t.id,'<p>A comanda será arquivada e a mesa ficará livre.</p>',async()=>{
     await save(next=>{
-      const table=next.tables.find(t=>t.id===selectedTable);
-      next.closedTables.push({...structuredClone(table),id:table.id,receiptId:crypto.randomUUID(),closed:date()});
+      const table=sameTable(next,t);
+      if (tableTotal(table)!==tablePaid(table) || table.items.length!==t.items.length || table.payments.length!==t.payments.length)
+        throw review('A comanda mudou. Confira o consumo e os pagamentos.');
+      next.closedTables.push({...structuredClone(table),id:table.id,receiptId:operationId,closed:date()});
       Object.assign(table,{name:'',opened:null,items:[],payments:[]});
-    });
-    const closed=data.closedTables.at(-1);
+    },true);
+    const closed=data.closedTables.find(t=>t.receiptId===operationId);
     selectedTable=null;view='tables';
     return {receipt:{id:closed.receiptId,time:closed.closed,table:closed.id,customer:closed.name,items:closed.items,payments:closed.payments,total:tableTotal(closed)}};
   },'Encerrar mesa');
@@ -188,6 +247,12 @@ function sales(){
     $('.order [data-pay]').textContent='Salvar pedido na mesa';
     $('.payments').hidden=true;
   }
+  if (!selectedTable && lines.length) {
+    const button=document.createElement('button');
+    button.textContent='Enviar para mesa';
+    button.onclick=sendToTable;
+    $('.order [data-pay]').before(button);
+  }
   $('#search').oninput=e=>{search=e.target.value;updateCatalog();};
   updateCatalog();
 }
@@ -206,7 +271,7 @@ function tenderTotal(sales,method) {
 function payment(method){
   if(selectedTable){addTableItems();return;}
   if(!data.cash){notice('Abra o caixa para registrar a venda.');cash();return;}
-  const items=order(), total=sum(items,'total');
+  const items=order(), total=sum(items,'total'), shift=data.cash;
   const customerOptions=[['','Selecione o cliente'],...data.customers.map(c=>[c.id,c.name])];
   fields('Receber pagamento',`<p>Total <strong>${money(total)}</strong></p>${select('Forma de pagamento','method',[...methods,'Dividido'].map(x=>[x,x]),method||'Pix')}<div id="payment-extra"></div>`,async v=>{
     const customer=data.customers.find(c=>c.id===v.customer);
@@ -219,13 +284,19 @@ function payment(method){
       if(pending+total>customer.limit)throw new Error('A venda excede o limite de crédito do cliente.');
     }
     await save(next=>{
-      const id=crypto.randomUUID();
+      checkShift(next,shift);
+      if (v.method==='A prazo') {
+        const limit=next.customers.find(c=>c.id===customer.id)?.limit;
+        const pending=sum(next.bills.filter(b=>b.party===customer.id&&b.kind==='receber'&&!b.paid),'amount');
+        if (limit==null || pending+total>limit) throw review('O limite disponível mudou. Confira o cadastro do cliente.');
+      }
+      const id=operationId;
       next.sales.push({id,shift:next.cash.id,time:date(),items,total,payments,due:v.due,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
       if(v.method==='A prazo')next.bills.push({id:crypto.randomUUID(),kind:'receber',party:customer.id,description:'Venda '+id.slice(0,8),amount:total,due:v.due,paid:null});
-    });
+    },true);
     cart={};
     notice(v.method==='Dinheiro'?'Venda registrada. Troco '+money(given-total):'Venda registrada.');
-    return {receipt:data.sales.at(-1)};
+    return {receipt:data.sales.find(s=>s.id===operationId)};
   },'Confirmar venda');
   const sync=()=>{
     const type=dialog.querySelector('[name=method]').value;
@@ -327,6 +398,7 @@ function record(key,id,billCategory){
   });
 }
 function render(){
+  if (selectedTable && (!tableOrder()?.opened || tableOrder().opened!==selectedOpening)) selectedTable=null;
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   $('#cash').innerHTML=data.cash?'<span class="dot">●</span> Caixa aberto':'<span class="closed">●</span> Caixa fechado';
   if(view==='sales')sales();else if(view==='tables')tables();else back();
@@ -335,7 +407,13 @@ document.addEventListener('click',e=>{
   const button=e.target.closest('button');
   if(!button||!data||busy)return;
   const d=button.dataset;
-  if(d.view){view=d.view;if(view==='sales'){selectedTable=null;cart={};}render();}
+  if(d.view){
+    if(order().length && (d.view!==view || selectedTable)){
+      notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, toque em Enviar para mesa.');
+      return;
+    }
+    view=d.view;if(view==='sales')selectedTable=null;render();
+  }
   if(d.table)openTable(d.table);
   if(d.tableReceive!==undefined)receiveTable();
   if(d.tableClose!==undefined)closeTable();
@@ -358,7 +436,12 @@ document.addEventListener('click',e=>{
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 });
-fetch('/api/dados').then(r=>{if(!r.ok)throw Error();return r.json();}).then(s=>{data=s;
-data.tables=data.tables||Array.from({length:10},(_,i)=>({id:String(i+1),name:'',opened:null,items:[],payments:[]}));
-data.closedTables=data.closedTables||[];
-render();}).catch(()=>notice('Não foi possível carregar o sistema local.'));
+loadState().then(state=>{data=state;render();}).catch(()=>notice('Não foi possível carregar o sistema.'));
+async function refreshTables() {
+  if (!data || view!=='tables' || busy || dialog.open || document.hidden) return;
+  try {
+    const current=await loadState();
+    if (current.rev>data.rev && view==='tables' && !busy && !dialog.open) {data=current;render();}
+  } catch { /* The next refresh retries. */ }
+}
+setInterval(refreshTables,5000);
