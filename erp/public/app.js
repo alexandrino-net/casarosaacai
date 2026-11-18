@@ -290,8 +290,10 @@ function closeTable() {
   },'Encerrar mesa');
 }
 function sales(){
+  const categories=frontCategories().filter(c=>!c.hidden);
+  if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"><div class="tabs">${productCategories().map(c=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
   <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${qtyLabel(p)}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
@@ -603,6 +605,30 @@ function productCategories(state=data){
 function subcategories(parent){
   return (data.categories||[]).filter(c=>c.parent===parent).map(c=>c.name);
 }
+function frontCategories(){
+  const settings=new Map((data.categories||[]).filter(c=>!c.parent).map(c=>[c.name,c]));
+  return productCategories().map((name,index)=>{
+    const config=settings.get(name);
+    return {name,position:config?.position??index+1,hidden:config?.hidden===true};
+  }).sort((a,b)=>a.position-b.position);
+}
+function editFrontCategory(name){
+  const category=frontCategories().find(c=>c.name===name);
+  if(!category)return;
+  fields('Categoria no caixa · '+esc(name),
+    select('Exibição na tela de vendas','visibility',[['visible','Mostrar'],['hidden','Ocultar']],category.hidden?'hidden':'visible')+
+    input('Ordem de exibição','position',category.position,'number','required min="1" max="9999" step="1"'),async values=>{
+    const position=Number(values.position);
+    if(!Number.isInteger(position)||position<1||position>9999)throw Error('Informe uma ordem válida.');
+    await save(next=>{
+      const categories=next.categories??=[];
+      const existing=categories.find(c=>!c.parent && c.name===name);
+      const changes={position,hidden:values.visibility==='hidden'};
+      if(existing)Object.assign(existing,changes);
+      else categories.push({name,parent:'',...changes});
+    });
+  });
+}
 let showCategories=false;
 function createCategory(){
   fields('Nova categoria ou subcategoria',input('Nome','name','','text','required maxlength="80"')+
@@ -632,7 +658,10 @@ function back(){
     if(tab==='products'){
       content+='<button data-product-categories aria-expanded="'+showCategories+'">Categorias</button>';
       if(showCategories)content+='<h2>Categorias de produtos</h2><button data-new-category>Nova categoria ou subcategoria</button>'+
-        table(['Categoria','Subcategorias'],productCategories().map(c=>[esc(c),subcategories(c).map(esc).join(', ')||'—']));
+        table(['Categoria','Subcategorias','Na tela de vendas','Ordem',''],frontCategories().map(c=>[
+          esc(c.name),subcategories(c.name).map(esc).join(', ')||'—',c.hidden?'Oculta':'Visível',c.position,
+          '<button data-front-category="'+esc(c.name)+'">Configurar no caixa</button>'
+        ]));
       content+=table(['Produto','Categoria','Unidade','Estoque','Preço',''],data.products.map(p=>[esc(p.name),esc(p.category)+(p.subcategory?' / '+esc(p.subcategory):''),p.unit==='kg'?'KG':'UN',p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':money(p.price),edit(tab,p.id)]));
     } else if(data[tab]){
       content+=table(['Nome','Documento','Contato','Limite','Em aberto',''],data[tab].map(p=>[esc(p.name),esc(p.doc),esc(p.contact),money(p.limit),money(data.bills.filter(b=>!b.paid&&b.party===p.id).reduce((n,b)=>n+creditRules.remaining(b),0)),edit(tab,p.id)]));
@@ -876,6 +905,7 @@ document.addEventListener('click',e=>{
   if(button.id==='cash'||d.cash!==undefined)cash();
   if(d.productCategories!==undefined){showCategories=!showCategories;render();}
   if(d.newCategory!==undefined)createCategory();
+  if(d.frontCategory!==undefined)editFrontCategory(d.frontCategory);
   if(d.edit)record(d.edit,d.id,d.categoryBill);
   if(d.settle)settleBill(d.settle);
   if(d.backup!==undefined){
