@@ -416,7 +416,7 @@ function movementHistory() {
     [stamp(m.time),esc(m.kind),esc(m.reason),money(m.amount)]));
 }
 document.addEventListener('keydown',e=>{
-  if (!data || busy || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (!data || !canView('sales') || busy || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const menuOpen=dialog.open && dialog.querySelector('#function-title');
   if (document.querySelector('dialog[open]') && !menuOpen) return;
   if(e.key.toLowerCase()==='x' && !e.target.closest('input,textarea,select,[contenteditable="true"]')){
@@ -432,6 +432,7 @@ document.addEventListener('keydown',e=>{
   }
 });
 function cash(){
+  if(!canView('sales'))return;
   if(!data.cash){
     fields('Abrir caixa',amount('Fundo inicial em dinheiro','initial','0'),async v=>{
       await save(next=>next.cash={id:crypto.randomUUID(),opened:date(),initial:cents(v.initial)});
@@ -506,8 +507,9 @@ function editUser(login){
   fields(u?'Editar usuário':'Novo usuário',input('Nome','name',u?.name)+input('Login','login',login,'text',u?'readonly':'required maxlength="64"')+
     input(u?'Nova senha (opcional)':'Senha','password','','password',(u?'':'required ')+'minlength="10" maxlength="256" autocomplete="new-password"')+
     select('Acesso aos cadastros de equipe e vales','profile',[['operator','Operador'],['admin','Administrador']],u?.admin?'admin':'operator')+
+    select('Áreas permitidas para operador','access',[['both','Vendas, mesas, caixa e retaguarda'],['sales','Vendas, mesas e caixa'],['back','Somente retaguarda']],u?.access||'both')+
     select('Situação','status',[['active','Ativo'],['inactive','Inativo']],u?.active===false?'inactive':'active'),async v=>{
-      await staffRequest({action:'user',create:!u,name:v.name,login:v.login,password:v.password,active:v.status==='active',admin:v.profile==='admin'});
+      await staffRequest({action:'user',create:!u,name:v.name,login:v.login,password:v.password,active:v.status==='active',admin:v.profile==='admin',access:v.access});
     });
 }
 function back(){
@@ -516,7 +518,7 @@ function back(){
   let content='';
   if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
-    content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
+    content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.initial)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
   } else {
@@ -647,7 +649,10 @@ function receiveCredit(id){
 }
 function settleBill(id){
   const bill=data.bills.find(b=>b.id===id);
-  if(bill.kind==='receber'){receiveCredit(id);return;}
+  if(bill.kind==='receber'){
+    if(!canView('sales')){notice('O recebimento de clientes exige acesso ao caixa.');return;}
+    receiveCredit(id);return;
+  }
   fields('Liquidar conta','<p>'+esc(bill.description)+' · '+money(bill.amount)+'</p>'+
     paymentChoices(splitMethods)+'<div id="payment-extra"></div>',async v=>{
     const payments=tenderParts(v,bill.amount);
@@ -696,7 +701,13 @@ function removeItem(preselected){
     if(!saved){cart[key]--;if(!order().length) counterService=true;}
   },'Retirar uma unidade');
 }
+function canView(target){
+  return session?.admin || (target==='back'?session?.access!=='sales':session?.access!=='back');
+}
 function render(){
+  if(!canView(view))view=view==='back'?'sales':'back';
+  for(const button of document.querySelectorAll('header [data-view]'))button.hidden=!canView(button.dataset.view);
+  $('#functions').hidden=$('#cash').hidden=!canView('sales');
   if (selectedTable && (!tableOrder()?.opened || tableOrder().opened!==selectedOpening)) selectedTable=null;
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   $('#cash').innerHTML=data.cash?'<span class="dot">●</span> Caixa aberto':'<span class="closed">●</span> Caixa fechado';
@@ -708,6 +719,7 @@ document.addEventListener('click',e=>{
   const d=button.dataset;
   if(button.id==='functions'){functionMenu();return;}
   if(d.view){
+    if(!canView(d.view))return;
     if(order().length && (d.view!==view || selectedTable)){
       notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, toque em Enviar para mesa.');
       return;

@@ -41,7 +41,7 @@ module.exports = function staffStore(pool,folder,localSales) {
     const u=state.users.find(u=>u.login===login && u.active);
     if (sep<0 || !u || password.length>256) return null;
     const key=await derive(password,u.salt,32);
-    return crypto.timingSafeEqual(key,Buffer.from(u.key,'hex'))?{login:u.login,name:u.name,admin:u.admin}:null;
+    return crypto.timingSafeEqual(key,Buffer.from(u.key,'hex'))?{login:u.login,name:u.name,admin:u.admin,access:u.access||'both'}:null;
   }
   function withPurchases(employee,sales){
     const purchases=sales.filter(s=>s.employeeId===employee.id && s.method==='Vale em compras').map(s=>({
@@ -69,7 +69,7 @@ module.exports = function staffStore(pool,folder,localSales) {
     authorizePurchases(state,[...sales],added,actor);
   }
   function visible(state,sales) {
-    return {users:state.users.map(({login,name,active,admin})=>({login,name,active,admin})),employees:state.employees.map(e=>withPurchases(e,sales))};
+    return {users:state.users.map(({login,name,active,admin,access})=>({login,name,active,admin,access:access||'both'})),employees:state.employees.map(e=>withPurchases(e,sales))};
   }
   async function change(command,actor) {
     const {action,id}=command;
@@ -92,7 +92,9 @@ module.exports = function staffStore(pool,folder,localSales) {
         const admin=command.admin===true, active=command.active===true;
         if((actor.login===login || (!ownerPassword && !state.users.some(u=>u!==old && u.admin && u.active))) && (!admin || !active))
           fail('Mantenha um administrador ativo.');
-        const user={login,name:label(command.name,100),admin,active,...credentials};
+        const access=command.access??old?.access??'both';
+        if(!['both','sales','back'].includes(access)) fail('Permissão inválida.');
+        const user={login,access,name:label(command.name,100),admin,active,...credentials};
         if(old) Object.assign(old,user); else state.users.push(user);
       } else if(action==='employee') {
         let e=state.employees.find(e=>e.id===(command.employee||id));
