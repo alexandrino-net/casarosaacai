@@ -134,7 +134,7 @@ function closeTable() {
 }
 function sales(){
   const lines=order(), total=sum(lines,'total');
-  app.innerHTML=`<div class="pos"><section class="catalog"><h1>Nova venda</h1><input id="search" type="search" placeholder="Buscar produto" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${['Todos','Açaí','Adicionais','Bebidas'].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  app.innerHTML=`<div class="pos"><section class="catalog"><h1>Nova venda</h1><input id="search" type="search" placeholder="Buscar produto" aria-label="Buscar produto" value="${esc(search)}"><div class="tabs">${['Todos',...["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"]].map(c=>`<button data-category="${c}" class="${c===category?'active':''}">${c}</button>`).join('')}</div><div id="products" class="grid"></div></section>
   <aside class="order"><h2>Pedido atual</h2><div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${p.qty}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div><div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
@@ -156,13 +156,25 @@ function sales(){
   updateCatalog();
 }
 const methods=['Pix','Cartão','Dinheiro','A prazo'];
+const splitMethods = ['Pix','Cartão','Dinheiro'];
+function splitPayment(values,total) {
+  const parts = splitMethods.map((method,i)=>({method,amount:cents(values['part'+i] || 0)}));
+  if(parts.some(p=>!Number.isSafeInteger(p.amount)||p.amount<0)) throw new Error('Confira os valores informados.');
+  const paid = parts.filter(p=>p.amount>0);
+  if(paid.length<2 || sum(paid,'amount')!==total) throw new Error('Informe pelo menos duas formas que somem o total da venda.');
+  return paid;
+}
+function tenderTotal(sales,method) {
+  return sales.reduce((total,sale)=>total+(sale.payments ? sum(sale.payments.filter(p=>p.method===method),'amount') : sale.method===method ? sale.total : 0),0);
+}
 function payment(method){
   if(selectedTable){addTableItems();return;}
   if(!data.cash){notice('Abra o caixa para registrar a venda.');cash();return;}
   const items=order(), total=sum(items,'total');
   const customerOptions=[['','Selecione o cliente'],...data.customers.map(c=>[c.id,c.name])];
-  fields('Receber pagamento',`<p>Total <strong>${money(total)}</strong></p>${select('Forma de pagamento','method',methods.map(x=>[x,x]),method||'Pix')}<div id="payment-extra"></div>`,async v=>{
+  fields('Receber pagamento',`<p>Total <strong>${money(total)}</strong></p>${select('Forma de pagamento','method',[...methods,'Dividido'].map(x=>[x,x]),method||'Pix')}<div id="payment-extra"></div>`,async v=>{
     const customer=data.customers.find(c=>c.id===v.customer);
+    const payments=v.method==='Dividido'?splitPayment(v,total):undefined;
     const given=v.given?cents(v.given):total;
     if(v.method==='Dinheiro'&&given<total)throw new Error('O valor recebido é menor que o total.');
     if(v.method==='A prazo'){
@@ -172,7 +184,7 @@ function payment(method){
     }
     await save(next=>{
       const id=crypto.randomUUID();
-      next.sales.push({id,shift:next.cash.id,time:date(),items,total,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
+      next.sales.push({id,shift:next.cash.id,time:date(),items,total,payments,method:v.method,customer:customer?.name||'',given:v.method==='Dinheiro'?given:null});
       if(v.method==='A prazo')next.bills.push({id:crypto.randomUUID(),kind:'receber',party:customer.id,description:'Venda '+id.slice(0,8),amount:total,due:v.due,paid:null});
     });
     cart={};
@@ -180,7 +192,7 @@ function payment(method){
   },'Confirmar venda');
   const sync=()=>{
     const type=dialog.querySelector('[name=method]').value;
-    $('#payment-extra').innerHTML=type==='Dinheiro'?amount('Valor recebido','given',(total/100).toFixed(2),'.01')+
+    $('#payment-extra').innerHTML=type==='Dividido'?splitMethods.map((m,i)=>amount(m,'part'+i,'0')).join(''):type==='Dinheiro'?amount('Valor recebido','given',(total/100).toFixed(2),'.01')+
       '<p id="change"></p>':type==='A prazo'?select('Cliente','customer',customerOptions,'')+input('Vencimento','due','','date'):'';
     const received=dialog.querySelector('[name=given]');
     if(received){
@@ -200,9 +212,9 @@ function cash(){
     return;
   }
   const shift=data.cash, sales=data.sales.filter(s=>s.shift===shift.id);
-  const expected=shift.initial+sum(sales.filter(s=>s.method==='Dinheiro'),'total');
+  const expected=shift.initial+tenderTotal(sales,'Dinheiro');
   fields('Fechar caixa',`<p>Abertura em ${stamp(shift.opened)}</p><p>Fundo inicial <strong>${money(shift.initial)}</strong></p>
-  ${methods.map(m=>`<p>${m} <strong>${money(sum(sales.filter(s=>s.method===m),'total'))}</strong></p>`).join('')}
+  ${methods.map(m=>`<p>${m} <strong>${money(tenderTotal(sales,m))}</strong></p>`).join('')}
   <p>Dinheiro esperado <strong>${money(expected)}</strong></p>${amount('Dinheiro contado','counted')}`,async v=>{
     if(order().length)throw new Error('Conclua ou retire os itens do pedido antes de fechar.');
     const counted=cents(v.counted);
@@ -224,7 +236,7 @@ function back(){
   if(tab==='Resumo'){
     content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
-    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),esc(s.method),esc(s.customer),money(s.total)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
+    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
   } else {
     const billCategory = ['fixos','impostos'].includes(tab) ? tab : null;
     const billKind = billCategory ? 'pagar' : tab;
@@ -250,7 +262,7 @@ function record(key,id,billCategory){
   if(isBill){
     html=(key==='pagar'?select('Classificação','category',[['geral','Geral'],['fixos','Custos fixos'],['impostos','Impostos']],old?.category||billCategory||'geral'):'')+select(key==='pagar'?'Fornecedor':'Cliente','party',(key==='pagar'?[['','Sem fornecedor'],...parties.map(p=>[p.id,p.name])]:parties.map(p=>[p.id,p.name])),old?.party).replace(key==='pagar'?' required':'__unused__','')+input('Descrição','description',old?.description)+amount('Valor','amount',old?old.amount/100:'','.01')+input('Vencimento','due',old?.due,'date');
   } else if(key==='products'){
-    html=input('Nome','name',old?.name)+select('Categoria','category',['Açaí','Adicionais','Bebidas'].map(c=>[c,c]),old?.category)+amount('Preço','price',old?old.price/100:'','.01')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
+    html=input('Nome','name',old?.name)+select('Categoria','category',["Açaí","Cafés","Pães","Omeletes","Adicionais","Sobremesa saudável","Sucos","Vitaminas","Bebidas"].map(c=>[c,c]),old?.category)+amount('Preço','price',old?old.price/100:'','.01')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
   } else {
     html=input('Nome','name',old?.name)+input('CPF / CNPJ','doc',old?.doc,'text','')+input('Telefone ou e-mail','contact',old?.contact,'text','')+amount('Limite de crédito','limit',old?old.limit/100:'0');
   }

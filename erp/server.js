@@ -15,6 +15,296 @@ const initial = {
     ['Morango','Adicionais',400], ['Granola','Adicionais',300], ['Água mineral','Bebidas',400]
   ].map(([name, category, price], i) => ({ id: String(i), name, category, price, image: i }))
 };
+const officialMenu = [
+  {
+    "name": "Açaí 150 ml",
+    "category": "Açaí",
+    "price": 1700,
+    "image": 7
+  },
+  {
+    "name": "Açaí 300 ml",
+    "category": "Açaí",
+    "price": 3100,
+    "image": 7
+  },
+  {
+    "name": "Açaí 400 ml",
+    "category": "Açaí",
+    "price": 3800,
+    "image": 7
+  },
+  {
+    "name": "Açaí 500 ml",
+    "category": "Açaí",
+    "price": 4500,
+    "image": 7
+  },
+  {
+    "name": "Açaí com creme de cupuaçu 300 ml",
+    "category": "Açaí",
+    "price": 3800,
+    "image": 7
+  },
+  {
+    "name": "Açaí com creme de cupuaçu 500 ml",
+    "category": "Açaí",
+    "price": 4800,
+    "image": 7
+  },
+  {
+    "name": "Café expresso pequeno",
+    "category": "Cafés",
+    "price": 900,
+    "image": 8
+  },
+  {
+    "name": "Café expresso duplo",
+    "category": "Cafés",
+    "price": 1800,
+    "image": 9
+  },
+  {
+    "name": "Café expresso com leite",
+    "category": "Cafés",
+    "price": 1000,
+    "image": 10
+  },
+  {
+    "name": "Cappuccino",
+    "category": "Cafés",
+    "price": 1500,
+    "image": 10
+  },
+  {
+    "name": "Chocolate quente ou frio",
+    "category": "Cafés",
+    "price": 1500,
+    "image": 11
+  },
+  {
+    "name": "Café caseiro com leite",
+    "category": "Cafés",
+    "price": 700,
+    "image": 10
+  },
+  {
+    "name": "Café caseiro",
+    "category": "Cafés",
+    "price": 600,
+    "image": 9
+  },
+  {
+    "name": "Pão com manteiga",
+    "category": "Pães",
+    "price": 400,
+    "image": 12
+  },
+  {
+    "name": "Pão com ovo",
+    "category": "Pães",
+    "price": 700,
+    "image": 13
+  },
+  {
+    "name": "Pão com queijo",
+    "category": "Pães",
+    "price": 700,
+    "image": 14
+  },
+  {
+    "name": "Misto",
+    "category": "Pães",
+    "price": 1100,
+    "image": 14
+  },
+  {
+    "name": "Pão com queijo e ovo",
+    "category": "Pães",
+    "price": 1200,
+    "image": 13
+  },
+  {
+    "name": "Misto com ovo",
+    "category": "Pães",
+    "price": 1400,
+    "image": 15
+  },
+  {
+    "name": "Americano",
+    "category": "Pães",
+    "price": 2200,
+    "image": 15
+  },
+  {
+    "name": "Omelete Fit",
+    "category": "Omeletes",
+    "price": 2500,
+    "image": 16
+  },
+  {
+    "name": "Omelete Full Life",
+    "category": "Omeletes",
+    "price": 3000,
+    "image": 16
+  },
+  {
+    "name": "Omelete Nutri Verde",
+    "category": "Omeletes",
+    "price": 3990,
+    "image": 17
+  },
+  {
+    "name": "Adicional de bacon",
+    "category": "Adicionais",
+    "price": 700,
+    "image": 16
+  },
+  {
+    "name": "Adicional de presunto",
+    "category": "Adicionais",
+    "price": 400,
+    "image": 16
+  },
+  {
+    "name": "Adicional de banana frita",
+    "category": "Adicionais",
+    "price": 500,
+    "image": 16
+  },
+  {
+    "name": "Adicional de cream cheese",
+    "category": "Adicionais",
+    "price": 1200,
+    "image": 16
+  },
+  {
+    "name": "Copo Equilíbrio",
+    "category": "Sobremesa saudável",
+    "price": 3290,
+    "image": 18
+  },
+  {
+    "name": "Juice Sun – Suco especial",
+    "category": "Sucos",
+    "price": 2000,
+    "image": 19
+  },
+  {
+    "name": "Suco de açaí (fruta)",
+    "category": "Sucos",
+    "price": 1400,
+    "image": 20
+  },
+  {
+    "name": "Suco de laranja (fruta)",
+    "category": "Sucos",
+    "price": 1400,
+    "image": 22
+  },
+  {
+    "name": "Suco de limão (fruta)",
+    "category": "Sucos",
+    "price": 1400,
+    "image": 21
+  },
+  {
+    "name": "Suco de manga (fruta)",
+    "category": "Sucos",
+    "price": 1400,
+    "image": 22
+  },
+  {
+    "name": "Suco de mamão (fruta)",
+    "category": "Sucos",
+    "price": 1400,
+    "image": 22
+  },
+  {
+    "name": "Suco de cupuaçu (fruta)",
+    "category": "Sucos",
+    "price": 1400,
+    "image": 21
+  },
+  {
+    "name": "Suco de abacaxi (polpa)",
+    "category": "Sucos",
+    "price": 1200,
+    "image": 21
+  },
+  {
+    "name": "Suco de acerola (polpa)",
+    "category": "Sucos",
+    "price": 1200,
+    "image": 23
+  },
+  {
+    "name": "Suco de cajá (polpa)",
+    "category": "Sucos",
+    "price": 1200,
+    "image": 22
+  },
+  {
+    "name": "Suco de caju (polpa)",
+    "category": "Sucos",
+    "price": 1200,
+    "image": 22
+  },
+  {
+    "name": "Suco de cacau (polpa)",
+    "category": "Sucos",
+    "price": 1200,
+    "image": 21
+  },
+  {
+    "name": "Suco de goiaba (polpa)",
+    "category": "Sucos",
+    "price": 1200,
+    "image": 23
+  },
+  {
+    "name": "Suco de graviola (polpa)",
+    "category": "Sucos",
+    "price": 1200,
+    "image": 21
+  },
+  {
+    "name": "Vitamina de açaí",
+    "category": "Vitaminas",
+    "price": 2000,
+    "image": 24
+  },
+  {
+    "name": "Vitamina de abacate",
+    "category": "Vitaminas",
+    "price": 2000,
+    "image": 25
+  },
+  {
+    "name": "Vitamina de banana",
+    "category": "Vitaminas",
+    "price": 2000,
+    "image": 25
+  },
+  {
+    "name": "Vitamina de mamão",
+    "category": "Vitaminas",
+    "price": 2000,
+    "image": 26
+  }
+];
+function applyMenu(data) {
+  if (data.menuVersion === 1) return false;
+  const normalize = name => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const item of officialMenu) {
+    const existing = data.products.find(p => normalize(p.name) === normalize(item.name));
+    if (existing) Object.assign(existing, item);
+    else data.products.push({ id: crypto.randomUUID(), ...item });
+  }
+  data.menuVersion = 1;
+  data.rev++;
+  return true;
+}
 const online = Boolean(process.env.DATABASE_URL);
 const pool = online ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
 initial.company = {name: "Casa Rosa Açaí"};
@@ -91,17 +381,29 @@ const server = http.createServer(async (req, res) => {
       return reply(500, { error: 'Falha ao salvar os dados.' });
     }
   }
-  const asset = files[url] || (/^\/img\/[0-6]\.jpg$/.test(url) && [url.slice(1), 'image/jpeg']);
+  const asset = files[url] || (/^\/img\/(?:[0-9]|1[0-9]|2[0-6])\.jpg$/.test(url) && [url.slice(1), 'image/jpeg']);
   if (!asset) return reply(404, { error: 'Página indisponível.' });
   res.writeHead(200, { 'Content-Type': asset[1] + (asset[1].startsWith('text/') ? '; charset=utf-8' : '') });
   fs.createReadStream(path.join(__dirname, 'public', asset[0])).pipe(res);
 });
 async function start() {
+if (!online && applyMenu(state)) fs.writeFileSync(database, JSON.stringify(state));
 if (online) {
   if (!process.env.CASA_ROSA_SENHA || !process.env.PUBLIC_ORIGIN)
     throw new Error('Configure CASA_ROSA_SENHA e PUBLIC_ORIGIN antes de iniciar.');
   await pool.query('CREATE TABLE IF NOT EXISTS casa_rosa_state (id integer PRIMARY KEY CHECK (id = 1), payload jsonb NOT NULL)');
   await pool.query('INSERT INTO casa_rosa_state (id, payload) VALUES (1, $1::jsonb) ON CONFLICT (id) DO NOTHING', [JSON.stringify(initial)]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query('SELECT payload FROM casa_rosa_state WHERE id=1 FOR UPDATE');
+    const data = result.rows[0].payload;
+    if (applyMenu(data)) await client.query('UPDATE casa_rosa_state SET payload=$1 WHERE id=1', [JSON.stringify(data)]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
 }
 const port = Number(process.env.PORT || process.env.CASA_ROSA_PORTA || 3187);
 server.listen(port, online ? '0.0.0.0' : '127.0.0.1', () => {
