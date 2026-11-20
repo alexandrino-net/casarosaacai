@@ -325,19 +325,40 @@ const files = {
   '/credit.js':['credit.js','text/javascript'],
   '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']
 };
+const {createAccess,credential,loginPage}=require('./acesso');
+const access=createAccess(online);
+const checkAccess=require('./permissoes');
 const server = http.createServer(async (req, res) => {
+  const url = req.url.split('?')[0];
+  const origin=process.env.PUBLIC_ORIGIN || 'http://'+req.headers.host;
+  const signIn=(status,error='')=>{
+    res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
+    res.end(loginPage('/entrar','login',error));
+  };
+  if(url==='/entrar' && req.method==='GET')return signIn(200);
+  if((url==='/entrar'||url==='/sair') && req.method==='POST'){
+    if(req.headers.origin!==origin){res.writeHead(403);return res.end('Origem inválida.');}
+    if(url==='/sair')access.close(req,res);
+    else try{
+      const auth=await credential(req);
+      if(!await staff.authenticate(auth))return signIn(401,'Usuário ou senha inválidos.');
+      access.start(req,res,auth);
+    }catch{return signIn(400,'Não foi possível entrar. Confira os dados e tente novamente.');}
+    res.writeHead(303,{Location:url==='/sair'?'/entrar':'/','Cache-Control':'no-store'});
+    return res.end();
+  }
   let actor;
-  try {actor=await staff.authenticate(req.headers.authorization);}
+  try {actor=await staff.authenticate(req.headers.authorization||access.read(req));}
   catch {res.writeHead(503);return res.end('Banco indisponível.');}
   if (!actor) {
-    res.writeHead(401,{'WWW-Authenticate':'Basic realm="Casa Rosa", charset="UTF-8"','Cache-Control':'no-store'});
-    return res.end('Entre com seu usuário e senha.');
+    if(url==='/' && req.method==='GET'){res.writeHead(303,{Location:'/entrar','Cache-Control':'no-store'});return res.end();}
+    res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    return res.end(JSON.stringify({error:'Entre novamente para continuar.'}));
   }
   const reply = (status, value) => {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(value));
   };
-  const url = req.url.split('?')[0];
   if(url==='/api/funcionarios' && req.method==='GET'){
     try{return reply(200,await staff.directory());}catch{return reply(503,{error:'Lista de funcionários indisponível.'});}
   }
@@ -382,32 +403,7 @@ const server = http.createServer(async (req, res) => {
       // Requests from older tills also pass the same credit checks before the revision-guarded write.
       const current=pool?(await pool.query('SELECT payload FROM casa_rosa_state WHERE id=1')).rows[0].payload:state;
       if(current.rev!==next.rev) return reply(409,{error:'O caixa foi atualizado em outro aparelho.'});
-      if(!actor.admin && actor.access!=='both'){
-        const {isDeepStrictEqual}=require('node:util');
-        const changed=key=>!isDeepStrictEqual(next[key],current[key]??initial[key]);
-        const forbidden=actor.access==='back'?
-          ['sales','cash','shifts','tables','closedTables','itemRemovals']:
-          ['products','categories','customers','suppliers','company'];
-        if(forbidden.some(changed)) return reply(403,{error:'Seu usuário não tem permissão para esta alteração.'});
-        if(actor.access==='sales' && changed('bills')){
-          const previous=new Map(current.bills.map(b=>[b.id,b]));
-          const oldSales=new Set(current.sales.map(s=>s.id));
-          const sales=new Set(next.sales.filter(s=>s.method==='A prazo'&&!oldSales.has(s.id)).map(s=>s.id));
-          const oldReceipts=new Set((current.cash?.collections||[]).map(r=>r.id));
-          const receipts=new Set((next.cash?.collections||[]).filter(r=>!oldReceipts.has(r.id)).map(r=>r.id));
-          const valid=next.bills.every(b=>{
-            const old=previous.get(b.id);
-            if(!old)return b.kind==='receber' && sales.has(b.saleId);
-            previous.delete(b.id);
-            if(isDeepStrictEqual(b,old))return true;
-            const {paid,payments,receipts:entries,...base}=b;
-            const {paid:oldPaid,payments:oldPayments,receipts:oldEntries,...oldBase}=old;
-            return old.kind==='receber' && !oldPaid && isDeepStrictEqual(base,oldBase) &&
-              (entries||[]).some(r=>receipts.has(r.id));
-          });
-          if(!valid || previous.size)return reply(403,{error:'A edição de contas exige acesso à retaguarda.'});
-        }
-      }
+      checkAccess(actor,current,next);
       const knownCollections=new Set((current.cash?.collections||[]).map(r=>r.id));
       for(const receipt of next.cash?.collections||[]){
         if(knownCollections.has(receipt.id)) continue;
