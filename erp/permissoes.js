@@ -4,7 +4,7 @@ module.exports=function checkAccess(actor,current,next){
         const defaults={closedTables:[],tables:Array.from({length:10},(_,i)=>({id:String(i+1),name:'',opened:null,items:[],payments:[]}))};
         const changed=key=>!isDeepStrictEqual(next[key]??defaults[key],current[key]??defaults[key]);
         const forbidden=actor.access==='back'?
-          ['sales','cash','shifts','tables','closedTables','itemRemovals']:
+          ['sales','cash','shifts','tables','closedTables','itemRemovals','tableCancellations']:
           ['products','categories','customers','suppliers','company'];
         if(forbidden.some(changed)) throw Object.assign(Error('Seu usuário não tem permissão para esta alteração.'),{status:403});
         if(actor.access==='sales' && changed('bills')){

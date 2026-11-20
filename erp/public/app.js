@@ -91,10 +91,10 @@ function showReceipt(sale) {
   receipt.showModal();
 }
 
-function fields(title, html, action, submit='Salvar') {
+function fields(title, html, action, submit='Salvar', cancel='Voltar') {
   if(busy) return;
   operationId=crypto.randomUUID();
-  dialog.innerHTML=`<form><h2>${title}</h2>${html}<p role="alert" class="form-error" hidden></p><div class="actions"><button type="button" id="cancel">Voltar</button><button class="primary">${submit}</button></div></form>`;
+  dialog.innerHTML=`<form><h2>${title}</h2>${html}<p role="alert" class="form-error" hidden></p><div class="actions"><button type="button" id="cancel">${cancel}</button><button class="primary">${submit}</button></div></form>`;
   dialog.querySelector('#cancel').onclick=()=>dialog.close();
   dialog.querySelector('form').onsubmit=async event=>{
     event.preventDefault();
@@ -289,6 +289,29 @@ function closeTable() {
     return {receipt:{id:closed.receiptId,time:closed.closed,table:closed.id,customer:closed.name,items:closed.items,payments:closed.payments,fee:serviceCharge(closed.items,closed.service),total:tableTotal(closed)}};
   },'Encerrar mesa');
 }
+function cancelTable(){
+  const t=selectedTable?tableOrder():null;
+  if(!t?.opened){notice('Abra a comanda que deseja cancelar.');return;}
+  const total=tableTotal(t), paid=tablePaid(t), balance=total-paid;
+  const draft=order();
+  fields('Cancelar comanda · Mesa '+esc(t.id),
+    '<p>Total da comanda <strong>'+money(total)+'</strong><br>Já recebido <strong>'+money(paid)+
+    '</strong><br>Saldo a cancelar <strong>'+money(balance)+'</strong></p>'+
+    (draft.length?'<p>Os itens ainda no pedido também serão descartados.</p>':'')+
+    (paid?'<p>Os pagamentos registrados ficam no caixa. Esta ação não faz estorno.</p>':''),async()=>{
+      await save(next=>{
+        const current=sameTable(next,t);
+        if(JSON.stringify(current.items)!==JSON.stringify(t.items) || JSON.stringify(current.payments)!==JSON.stringify(t.payments) || current.service!==t.service)
+          throw review('A comanda mudou. Confira os valores antes de cancelar.');
+        (next.tableCancellations??=[]).push({id:operationId,time:date(),table:t.id,customer:current.name,
+          operator:session?.name||session?.login||'Caixa local',items:current.items,payments:current.payments,
+          draft,total,paid,balance,draftTotal:sum(draft,'total')});
+        Object.assign(current,{name:'',opened:null,items:[],payments:[],service:false});
+      },true);
+      cart={};buyer=null;selectedTable=null;selectedOpening=null;counterService=true;view='tables';
+      notice('Comanda cancelada. A mesa está livre.');
+    },'Sim','Não');
+}
 function sales(){
   const categories=frontCategories().filter(c=>!c.hidden);
   if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
@@ -306,7 +329,7 @@ function sales(){
       '<button data-print-order>Espelho da comanda</button> <button data-fee aria-pressed="'+Boolean(t.service)+'">'+(t.service?'Retirar':'Incluir')+' 10% de serviço</button>'+
       '<p>Consumo <strong>'+money(sum(t.items,'total'))+'</strong> · Serviço <strong>'+money(serviceCharge(t.items,t.service))+'</strong> · Pago <strong>'+money(tablePaid(t))+'</strong></p>' +
       '<p>Saldo <strong>'+money(tableTotal(t)-tablePaid(t))+'</strong></p>' +
-      '<button data-table-receive>Pagamento parcial / total</button> <button data-table-close>Encerrar mesa</button>';
+      '<button data-table-receive>Pagamento parcial / total</button> <button data-table-close>Encerrar mesa</button> <button data-table-cancel>Cancelar comanda</button>';
     $('.order').appendChild(panel);
     $('.pos').classList.add('table-mode');
     $('.order [data-pay]').textContent='Salvar pedido na mesa';
@@ -452,15 +475,16 @@ const letterFunctions={
   d:{label:'Fecha venda',run:closeSale},
   r:{label:'Lista produtos',run:productList},
   i:{label:'Clientes',run:identifyBuyer},
-  j:{label:'Imprime comanda (espelho da conta)',run:printOrder}
+  j:{label:'Imprime comanda (espelho da conta)',run:printOrder},
+  e:{label:'Excluir item do pedido',run:()=>removeItem()},
+  n:{label:'Cancelar comanda',run:cancelTable}
 };
 function functionMenu() {
   dialog.innerHTML='<h2 id="function-title">Funções do caixa</h2><div class="function-table">'+
-    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],...Object.entries(letterFunctions).map(([key,fn])=>[key.toUpperCase(),'<button data-letter=+key+>'+fn.label+'</button>']),['F7','<button data-identify>Cliente ou funcionário</button>'],['F8','<button data-collect>Receber fiado</button>'],['X','<button data-remove-shortcut>Retirar item do pedido</button>'],...cashFunctions.map(f=>[f.key,
+    table(['Atalho','Função'],[['F2','Abrir funções do caixa'],...Object.entries(letterFunctions).map(([key,fn])=>[key.toUpperCase(),'<button data-letter="'+key+'">'+fn.label+'</button>']),['F7','<button data-identify>Cliente ou funcionário</button>'],['F8','<button data-collect>Receber fiado</button>'],['F10','<button data-exit>Fechar sistema</button>'],...cashFunctions.map(f=>[f.key,
       '<button type="button" data-function="'+f.key+'"><strong>'+f.name+'</strong><br>'+f.description+'</button>'])])+
     '</div><div class="actions"><button type="button" id="cancel">Voltar</button></div>';
   dialog.querySelector('#cancel').onclick=()=>dialog.close();
-  dialog.querySelector('[data-remove-shortcut]').onclick=()=>{dialog.close();removeItem();};
   dialog.querySelectorAll('[data-function]').forEach(button=>button.onclick=()=>{
     dialog.close();
     cashMovement(cashFunctions.find(f=>f.key===button.dataset.function));
@@ -496,18 +520,27 @@ function movementHistory() {
   return '<h2>Movimentações do caixa</h2>'+table(['Data','Operação','Motivo','Valor'],entries.map(m=>
     [stamp(m.time),esc(m.kind),esc(m.reason),money(m.amount)]));
 }
+async function exitSystem(){
+  if(busy)return;
+  if(dialog.open)dialog.close();
+  fields('Fechar sistema','<p>'+ (order().length?'Há itens ainda não gravados. Deseja sair mesmo assim?':'Deseja fechar o sistema?')+'</p>',async()=>{
+    const response=await fetch('/sair',{method:'POST'});
+    if(!response.ok)throw Error('Não foi possível encerrar a sessão.');
+    if(window.chrome?.webview)window.chrome.webview.postMessage('fechar-casa-rosa');
+    else location.replace('/entrar');
+  },'Sim','Não');
+  dialog.querySelector('button.primary').focus();
+}
 document.addEventListener('keydown',e=>{
-  if (!data || !canView('sales') || busy || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (!data || busy || e.repeat || e.ctrlKey || e.metaKey || e.isComposing) return;
+  if(e.key==='F10' && !e.altKey){e.preventDefault();exitSystem();return;}
+  if(!canView('sales'))return;
   const menuOpen=dialog.open && dialog.querySelector('#function-title');
-  if (document.querySelector('dialog[open]') && !menuOpen) return;
-  if(e.shiftKey && !letterFunctions[e.key.toLowerCase()])return;
   const shortcut=letterFunctions[e.key.toLowerCase()];
-  if(shortcut && (e.target.id==='search'||!e.target.closest('input,textarea,select,[contenteditable]'))){
+  if(shortcut && (view==='sales' || menuOpen) && (!document.querySelector('dialog[open]')||menuOpen)){
     e.preventDefault();if(menuOpen)dialog.close();shortcut.run();return;
   }
-  if(e.key.toLowerCase()==='x' && !e.target.closest('input,textarea,select,[contenteditable="true"]')){
-    e.preventDefault();if(menuOpen)dialog.close();removeItem();return;
-  }
+  if(e.altKey || e.shiftKey || (document.querySelector('dialog[open]') && !menuOpen))return;
   if(e.key==='F7'){e.preventDefault();if(menuOpen)dialog.close();identifyBuyer();return;}
   if(e.key==='F8'){e.preventDefault();if(menuOpen)dialog.close();receiveCredit();return;}
   const fn=cashFunctions.find(f=>f.key===e.key);
@@ -516,7 +549,7 @@ document.addEventListener('keydown',e=>{
     if (menuOpen) dialog.close();
     if(fn) cashMovement(fn); else if (!menuOpen) functionMenu();
   }
-});
+},true);
 function cash(){
   if(!canView('sales'))return;
   if(!data.cash){
@@ -650,7 +683,7 @@ function back(){
   else if(tab==='Resumo'){
     content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
-    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.initial)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
+    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.operator||r.initial)]))}<h2>Comandas canceladas</h2>${table(['Data','Mesa','Cliente','Total','Recebido','Saldo cancelado','Pedido descartado','Responsável'],[...(data.tableCancellations||[])].reverse().map(r=>[stamp(r.time),esc(r.table),esc(r.customer),money(r.total),money(r.paid),money(r.balance),money(r.draftTotal||0),esc(r.operator)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
   } else {
     const billCategory = ['fixos','impostos'].includes(tab) ? tab : null;
     const billKind = billCategory ? 'pagar' : tab;
@@ -832,10 +865,13 @@ function removeItem(preselected){
   const choices=order().map(i=>['cart:'+i.id,'Pedido · '+i.qty+' × '+i.name]);
   (t?.items||[]).forEach((i,index)=>choices.push(['saved:'+index,'Comanda · '+i.qty+' × '+i.name]));
   if(!choices.length){notice('Pedido sem itens.');return;}
-  fields('Retirar item',select('Item','line',choices,preselected||choices[0][0])+
-    input('Inicial do responsável','initial','','text','required maxlength="1"'),async v=>{
-    const initial=v.initial.trim().toLocaleUpperCase('pt-BR');
-    if(!/^\p{L}$/u.test(initial)) throw Error('Informe a inicial do responsável.');
+  const selected=preselected||choices[0][0];
+  const picker=preselected||choices.length===1
+    ? '<p>'+esc(choices.find(([value])=>value===selected)?.[1])+'</p>'
+    : select('Item','line',choices,selected);
+  fields('Excluir item',picker+'<p>Confirma a retirada do item selecionado?</p>',async v=>{
+    v.line=v.line||selected;
+    const operator=session?.name||session?.login||'Caixa local';
     const saved=v.line.startsWith('saved:'), key=v.line.slice(v.line.indexOf(':')+1);
     const item=saved?t.items[Number(key)]:order().find(i=>i.id===key);
     await save(next=>{
@@ -847,10 +883,11 @@ function removeItem(preselected){
         if(!line.qty) current.items.splice(Number(key),1);
         if(tableTotal(current)<tablePaid(current)) throw Error('A retirada deixaria o total abaixo do valor já pago.');
       }
-      (next.itemRemovals??=[]).push({time:date(),initial,table:t?.id,name:item.name,price:item.price});
+      (next.itemRemovals??=[]).push({time:date(),operator,table:t?.id,name:item.name,price:item.price});
     },true);
     if(!saved){cart[key]=item.unit==='kg'?0:cart[key]-1;if(!order().length) counterService=true;}
-  },'Retirar');
+  },'Sim','Não');
+  dialog.querySelector('button.primary').focus();
 }
 function canView(target){
   return session?.admin || (target==='back'?session?.access!=='sales':session?.access!=='back');
@@ -877,6 +914,7 @@ document.addEventListener('click',e=>{
     }
     view=d.view;if(view==='sales')selectedTable=null;if(!order().length)buyer=null;render();
   }
+  if(d.exit!==undefined){exitSystem();return;}
   if(d.letter && canView('sales')){dialog.close();letterFunctions[d.letter].run();return;}
   if(d.listAdd && canView('sales')){dialog.close();addProduct(d.listAdd);return;}
   if(d.identify!==undefined){if(dialog.open)dialog.close();identifyBuyer();return;}
@@ -885,6 +923,7 @@ document.addEventListener('click',e=>{
   if(d.printOrder!==undefined)printOrder();
   if(d.tableReceive!==undefined)receiveTable();
   if(d.tableClose!==undefined)closeTable();
+  if(d.tableCancel!==undefined)cancelTable();
   if(d.rename!==undefined)fields('Nome da mesa',input('Nome','name',tableOrder().name,'text','maxlength="100"'),async v=>{
     await save(next=>next.tables.find(t=>t.id===selectedTable).name=v.name.trim());
   });

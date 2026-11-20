@@ -108,3 +108,34 @@ h2{font-size:clamp(21px,1.9vw,28px)}
 header #functions {background:transparent;color:inherit;text-decoration:underline;text-underline-offset:3px;font-size:14px;min-height:44px;padding:4px 6px}
 .function-table button {min-height:44px;width:100%;text-align:left}
 .function-error {color:#8d1738}
+
+/* Casa Rosa — ameixa, champanhe e superfícies de marfim. */
+:root {
+  --ink:#271d27; --muted:#685860; --brand:#67284b; --brand-dark:#2c1728;
+  --gold:#e8cda2; --canvas:#f5f1ed; --paper:#fffdfa; --line:#e3d9d5;
+  --tint:#efe5ea; --focus:#96612d;
+}
+body {background:var(--canvas);color:var(--ink)}
+header {background:linear-gradient(110deg,#241621,#48243c);border-bottom:2px solid #b58d61;gap:clamp(8px,1.4vw,20px)}
+header button.active {background:var(--gold);color:#352029}
+header button:not(.active):hover {background:#ffffff1f}
+header #cash {border-color:#d2b695}
+h1,h2,h3 {color:var(--brand-dark);letter-spacing:-.02em}
+.pos {border-color:var(--line);background:#f8f4f1;box-shadow:0 8px 32px #34203114}
+.order,.panel,.stat,.card,dialog {background:var(--paper);color:var(--ink)}
+.order,.card,.dining-table,.line,.total,td,th {border-color:var(--line)}
+.card {box-shadow:0 2px 5px #34203108}
+.placeholder,.table-top {background:#f2e7ea}
+button {background:var(--tint);color:#492138}
+button:hover:not(:disabled) {filter:brightness(.96)}
+.active,.primary,.add {background:var(--brand);color:white}
+input,select {border-color:#b8a8b0;color:var(--ink);background:white}
+:focus-visible {outline:3px solid var(--focus);outline-offset:2px}
+header :focus-visible {outline-color:var(--gold)}
+th {background:#f2ece9;color:var(--brand-dark)}
+dialog::backdrop {background:#211820aa}
+#notice {background:var(--brand-dark);color:white}
+body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442d2a;font-size:13px}
+@media(min-width:761px){
+  body:has(.pos):has(> p[role="status"]) #app {height:calc(100dvh - 91px)}
+}
