@@ -242,7 +242,7 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   gap:8px;
 }
 .pos.sale-landscape :is(.catalog,.order) {
-  background:#fffdfaeb;
+  background:#fffdfaf0;
   border-radius:12px;
 }
 #sales-background-settings { margin-bottom:14px; }
@@ -283,7 +283,6 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   margin:0;
   border-radius:0;
 }
-.pos.sale-landscape :is(.catalog,.order) { background:#fffdfabf; }
 @media(min-width:761px) {
   #app:has(.pos) { padding:0; }
   .pos { grid-template-columns:minmax(0,1.55fr) minmax(350px,1fr); }
