@@ -284,6 +284,13 @@ function updateCatalog(){
     button.classList.toggle('active', selected);
     button.setAttribute('aria-pressed', String(selected));
   }
+  const more=$('.sale-more-categories');
+  if(more){
+    const active=more.querySelector('button.active');
+    const summary=more.querySelector('summary');
+    summary.classList.toggle('active',Boolean(active));
+    summary.textContent=active?'Mais · '+active.textContent:'Mais categorias';
+  }
   const products=filter ? data.products.filter(p=>[p.code,p.barcode].some(code=>code?.startsWith(filter))) : frontProducts(data,category);
   $('#products').innerHTML=products.map(p=>{const photo=productPhoto(p);return `<article class="card">${photo?`<img src="${photo}" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${(p.variable?'Preço na venda':money(p.price)+(p.unit==='kg'?' / kg':''))}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div>${!filter&&canView('back')?frontProductButton(p):''}</article>`;}).join('')||'Nenhum produto encontrado.';
 }
@@ -511,18 +518,19 @@ function saveSalesLayout(event){
 const backgroundKey='casa-rosa:fundo-pdv';
 const builtInBackgrounds=[{"credit": "Karina m roque · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Por_do_Sol_Praia_das_Conchas_Itacar%C3%A9.jpeg", "name": "Praia das Conchas"}, {"credit": "Marinelson Almeida Silva · CC BY 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_de_Itacar%C3%A9zinho_-_Itacar%C3%A9_-_Bahia_-_Brasil_(8552602430).jpg", "name": "Praia de Itacarezinho"}, {"credit": "LíviaBuhring · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Itacar%C3%A9_Praia_Cidade.JPG", "name": "Orla de Itacaré"}, {"name": "Pôr do sol em Itacaré", "credit": "Renato Castanhari Jr · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Sunset_Itacare.jpg"}, {"name": "Praia de Itacaré", "credit": "ACALME · CC BY 4.0", "source": "https://commons.wikimedia.org/wiki/File:Foto_ITACAR%C3%89_2.jpg"}, {"name": "Engenhoca · vista da praia", "credit": "Vaolsu · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Engenhoca%2C_Itacar%C3%A9-BA.jpg"}, {"name": "Engenhoca · orla", "credit": "Marinelson Almeida · CC BY 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_de_Engenhoca_-_Itacar%C3%A9_-_Ba._%288552584858%29.jpg"}, {"name": "Tiririca · vista da praia", "credit": "MikutoH · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Tiririca%2C_Itacar%C3%A9%2C_Bahia.jpg"}, {"name": "Tiririca · orla", "credit": "Eduardo Loureiro · CC BY-SA 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Tiririca.jpg"}, {"name": "Prainha", "credit": "FlaviaC · CC BY 3.0", "source": "https://commons.wikimedia.org/wiki/File:Prainha.JPG"}, {"name": "Coroinha", "credit": "Teles · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Coroinha_2.jpg"}, {"name": "Resende", "credit": "Matheus de Souza Silva · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_do_Resende_em_Itacar%C3%A9%2C_Bahia.jpg"}].map((photo,index)=>({...photo,id:String(index+27),src:'/img/'+(index+27)+'.jpg'}));
 let backgroundIndex=0;
+const defaultPanelTransparency=43;
 function panelTransparency(value){
-  if(value==null || value==='')return 6;
+  if(value==null || value==='')return defaultPanelTransparency;
   const number=Number(value);
-  return Number.isFinite(number)?Math.max(0,Math.min(50,Math.round(number))):6;
+  return Number.isFinite(number)?Math.max(0,Math.min(50,Math.round(number))):defaultPanelTransparency;
 }
 function backgroundSettings(){
   try{
     const saved=JSON.parse(localStorage.getItem(backgroundKey)||'{}');
     const custom=Array.isArray(saved.custom)?saved.custom.filter(p=>p&&typeof p.name==='string'&&typeof p.id==='string'&&
       typeof p.src==='string'&&p.src.length<=240000&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.src)):[];
-    return {mode:['rotate','fixed','off'].includes(saved.mode)?saved.mode:'rotate',fixed:saved.fixed,custom,transparency:panelTransparency(saved.transparency)};
-  }catch{return {mode:'rotate',custom:[],transparency:6};}
+    return {mode:['rotate','fixed','off'].includes(saved.mode)?saved.mode:'rotate',fixed:saved.fixed,custom,transparency:panelTransparency(saved.transparencyV2)};
+  }catch{return {mode:'rotate',custom:[],transparency:defaultPanelTransparency};}
 }
 function paintSalesBackground(advance=false){
   const panel=$('.pos');
@@ -567,7 +575,7 @@ async function saveBackground(event){
   try{
     settings.mode=mode;
     settings.fixed=fixed;
-    settings.transparency=panelTransparency(values.get('transparency'));
+    settings.transparencyV2=panelTransparency(values.get('transparency'));
     if(file?.size){
       const src=await encodeProductPhoto(file,240000,[1280,1080,900,720]);
       const id=crypto.randomUUID();
@@ -584,17 +592,27 @@ async function saveBackground(event){
 }
 function removeBackground(id){
   const settings=backgroundSettings();
+  settings.transparencyV2=settings.transparency;
   settings.custom=settings.custom.filter(p=>p.id!==id);
   if(settings.fixed===id)settings.fixed=builtInBackgrounds[0].id;
   try{localStorage.setItem(backgroundKey,JSON.stringify(settings));render();}
   catch{notice('Não foi possível remover a foto neste dispositivo.');}
+}
+const favoriteSaleCategories=['Açaí','Cafés','Pães','Sucos'];
+function saleCategoryButtons(categories){
+  const button=name=>'<button type="button" data-category="'+esc(name)+'" aria-pressed="false">'+esc(name)+'</button>';
+  const names=categories.map(({name})=>name);
+  const favorites=names.filter(name=>favoriteSaleCategories.includes(name));
+  const others=names.filter(name=>!favoriteSaleCategories.includes(name));
+  const more=others.length?'<details class="sale-more-categories"><summary>Mais categorias</summary><div class="sale-category-menu">'+others.map(button).join('')+'</div></details>':'';
+  return '<nav class="sale-category-tabs" aria-label="Categorias dos produtos">'+favorites.map(button).join('')+more+'</nav>';
 }
 function sales(){
   const layout=salesLayout(), comanda=saleMode==='comanda';
   const categories=frontCategories().filter(c=>!c.hidden);
   if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-modes" aria-label="Modo de venda"><button data-sale-mode="direct" aria-pressed="${!comanda}" class="${!comanda?'active':''}">Venda direta</button><button data-sale-mode="comanda" aria-pressed="${comanda}" class="${comanda?'active':''}">Só comanda</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-modes" aria-label="Modo de venda"><button data-sale-mode="direct" aria-pressed="${!comanda}" class="${!comanda?'active':''}">Venda direta</button><button data-sale-mode="comanda" aria-pressed="${comanda}" class="${comanda?'active':''}">Só comanda</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div>${saleCategoryButtons(categories)}<div id="products" class="grid"></div></section>
   <aside class="order"><h2>${comanda?'Só comanda':'Pedido atual'}</h2>${comanda?select('Comanda','sale-comanda',[['','Escolha a mesa'],...data.tables.map(t=>[t.id,'Mesa '+t.id+' · '+(t.opened?(t.name||'Ocupada'):'Livre')])],comandaTarget).replace('name="sale-comanda"','id="sale-comanda" name="sale-comanda"'):''}${comanda?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!lines.length?'disabled':(!comanda&&!total?'disabled':'')}>${comanda?'Lançar na comanda':'Receber pagamento'}</button><div class="payments" ${comanda?'hidden':''}>${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
