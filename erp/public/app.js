@@ -288,10 +288,9 @@ function updateCatalog(){
   }
   const more=$('.sale-more-categories');
   if(more){
-    const active=more.querySelector('button.active');
-    const summary=more.querySelector('summary');
-    summary.classList.toggle('active',Boolean(active));
-    summary.textContent=active?'Mais · '+active.textContent:'Mais categorias';
+    const active=$('#sale-category-menu button.active');
+    more.classList.toggle('active',Boolean(active));
+    more.textContent=active?'Mais · '+active.textContent:'Mais categorias';
   }
   const products=filter ? data.products.filter(p=>[p.code,p.barcode].some(code=>code?.startsWith(filter))) : frontProducts(data,category);
   $('#products').innerHTML=products.map(p=>{const photo=productPhoto(p);return `<article class="card">${photo?`<img src="${photo}" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${(p.variable?'Preço na venda':money(p.price)+(p.unit==='kg'?' / kg':''))}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div>${!filter&&canView('back')?frontProductButton(p):''}</article>`;}).join('')||'Nenhum produto encontrado.';
@@ -606,8 +605,9 @@ function saleCategoryButtons(categories){
   const names=categories.map(({name})=>name);
   const favorites=categories.filter(c=>favoriteSaleCategories.includes(c.renamedDefault||c.name)).map(c=>c.name);
   const others=names.filter(name=>!favorites.includes(name));
-  const more=others.length?'<details class="sale-more-categories"><summary>Mais categorias</summary><div class="sale-category-menu">'+others.map(button).join('')+'</div></details>':'';
-  return '<nav class="sale-category-tabs" aria-label="Categorias dos produtos">'+favorites.map(button).join('')+more+'</nav>';
+  const toggle=others.length?'<button type="button" class="sale-more-categories" aria-controls="sale-category-menu" aria-expanded="false">Mais categorias</button>':'';
+  const menu=others.length?'<div id="sale-category-menu" class="sale-category-menu" hidden>'+others.map(button).join('')+'</div>':'';
+  return '<nav class="sale-category-tabs" aria-label="Categorias dos produtos">'+favorites.map(button).join('')+toggle+menu+'</nav>';
 }
 function sales(){
   const layout=salesLayout(), comanda=saleMode==='comanda';
@@ -638,6 +638,13 @@ function sales(){
   };
   $('#search').oninput=e=>{search=e.target.value.replace(/[^0-9*,.]/g,'');e.target.value=search;updateCatalog();};
   bindNameSearch();
+  const more=$('.sale-more-categories');
+  if(more)more.onclick=()=>{
+    const menu=$('#sale-category-menu');
+    menu.hidden=!menu.hidden;
+    more.setAttribute('aria-expanded',String(!menu.hidden));
+    if(!menu.hidden)menu.scrollTop=0;
+  };
   updateCatalog();
   paintSalesBackground();
 }
