@@ -293,6 +293,18 @@ const officialMenu = [
     "image": 26
   }
 ];
+function usedProductIds(state){
+  const ids=new Set();
+  for(const records of [state.sales,state.tables,state.closedTables,state.tableCancellations,state.itemRemovals]){
+    for(const record of records||[]){
+      for(const item of [...(record.items||[]),...(record.draft||[])]){
+        ids.add(item.productId||item.id);
+      }
+      if(record.productId)ids.add(record.productId);
+    }
+  }
+  return ids;
+}
 function applyMenu(data) {
   if (data.menuVersion >= 2) return false;
   const normalize = name => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -369,6 +381,7 @@ const server = http.createServer(async (req, res) => {
       return reply(403,{error:'Origem inválida.'});
     let body='';
     try{
+      req.setEncoding('utf8');
       for await(const chunk of req){
         body+=chunk;
         if(body.length>20000000)return reply(413,{error:'Arquivo grande demais.'});
@@ -417,6 +430,7 @@ const server = http.createServer(async (req, res) => {
       if(req.headers['content-type']!=='application/json' || (req.headers.origin && req.headers.origin!==(process.env.PUBLIC_ORIGIN || 'http://'+req.headers.host)))
         return reply(403,{error:'Origem inválida.'});
       let body='';
+      req.setEncoding('utf8');
       for await(const chunk of req){body+=chunk;if(body.length>8192)return reply(413,{error:'Pedido muito grande.'});}
       return reply(200,await staff.change(JSON.parse(body),actor));
     } catch(e){return reply(e.status||500,{error:e.status?e.message:'Não foi possível concluir a operação.'});}
@@ -437,6 +451,7 @@ const server = http.createServer(async (req, res) => {
       return reply(403, { error: 'Origem inválida.' });
     try {
       let body = '';
+      req.setEncoding('utf8');
       for await (const chunk of req) {
         body += chunk;
         if (body.length > 20000000) return reply(413, { error: 'Limite de armazenamento atingido.' });
@@ -450,6 +465,13 @@ const server = http.createServer(async (req, res) => {
       const current=pool?(await pool.query('SELECT payload FROM casa_rosa_state WHERE id=1')).rows[0].payload:state;
       if(current.rev!==next.rev) return reply(409,{error:'O caixa foi atualizado em outro aparelho.'});
       checkAccess(actor,current,next);
+      const remainingProducts=new Set(next.products.map(p=>p.id));
+      const deletedProducts=current.products.filter(p=>!remainingProducts.has(p.id));
+      if(deletedProducts.length){
+        const used=new Set([...usedProductIds(current),...usedProductIds(next)]);
+        if(deletedProducts.some(p=>used.has(p.id)))
+          return reply(400,{error:'Produtos com lançamentos não podem ser excluídos.'});
+      }
       const knownCollections=new Set((current.cash?.collections||[]).map(r=>r.id));
       for(const receipt of next.cash?.collections||[]){
         if(knownCollections.has(receipt.id)) continue;

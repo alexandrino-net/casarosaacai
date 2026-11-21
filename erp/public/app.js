@@ -1,4 +1,4 @@
-const $ = s => document.querySelector(s);
+﻿const $ = s => document.querySelector(s);
 const money = cents => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents/100);
 const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const cents = value => Math.round(Number(value)*100);
@@ -40,6 +40,8 @@ async function loadState() {
   if (!response.ok) throw Error('Não foi possível consultar o caixa.');
   return prepareState(await response.json());
 }
+// Keep writes compatible with older local synchronizers that decode each chunk separately.
+const stateJson=state=>JSON.stringify(state).replace(/[\u0080-\uffff]/g,char=>'\\u'+char.charCodeAt(0).toString(16).padStart(4,'0'));
 let operationId;
 async function save(change, retry = false) {
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -50,7 +52,7 @@ async function save(change, retry = false) {
     next.operations = [...(next.operations || []).slice(-1023), operationId];
     let response;
     try {
-      response = await fetch('/api/dados', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(next)});
+      response = await fetch('/api/dados', {method:'PUT', headers:{'Content-Type':'application/json'}, body:stateJson(next)});
       if (response.ok) { data = prepareState(await response.json()); return; }
     } catch {
       data = await loadState();
@@ -602,8 +604,8 @@ const favoriteSaleCategories=['Açaí','Cafés','Pães','Sucos'];
 function saleCategoryButtons(categories){
   const button=name=>'<button type="button" data-category="'+esc(name)+'" aria-pressed="false">'+esc(name)+'</button>';
   const names=categories.map(({name})=>name);
-  const favorites=names.filter(name=>favoriteSaleCategories.includes(name));
-  const others=names.filter(name=>!favoriteSaleCategories.includes(name));
+  const favorites=categories.filter(c=>favoriteSaleCategories.includes(c.renamedDefault||c.name)).map(c=>c.name);
+  const others=names.filter(name=>!favorites.includes(name));
   const more=others.length?'<details class="sale-more-categories"><summary>Mais categorias</summary><div class="sale-category-menu">'+others.map(button).join('')+'</div></details>':'';
   return '<nav class="sale-category-tabs" aria-label="Categorias dos produtos">'+favorites.map(button).join('')+more+'</nav>';
 }
@@ -927,7 +929,9 @@ function editUser(login){
 }
 const defaultCategories=['Açaí','Cafés','Pães','Omeletes','Adicionais','Sobremesa saudável','Sucos','Vitaminas','Bebidas','Diversos'];
 function productCategories(state=data){
-  return [...new Set([...defaultCategories,...(state.categories||[]).filter(c=>!c.parent).map(c=>c.name),...state.products.map(p=>p.category).filter(Boolean)])];
+  const main=(state.categories||[]).filter(c=>!c.parent);
+  const renamed=new Set(main.map(c=>c.renamedDefault));
+  return [...new Set([...defaultCategories.filter(name=>!renamed.has(name)),...main.map(c=>c.name),...state.products.map(p=>p.category).filter(Boolean)])];
 }
 function subcategories(parent){
   return (data.categories||[]).filter(c=>c.parent===parent).map(c=>c.name);
@@ -936,7 +940,7 @@ function frontCategories(){
   const settings=new Map((data.categories||[]).filter(c=>!c.parent).map(c=>[c.name,c]));
   return productCategories().map((name,index)=>{
     const config=settings.get(name);
-    return {name,position:config?.position??index+1,hidden:config?.hidden===true};
+    return {name,position:config?.position??index+1,hidden:config?.hidden===true,renamedDefault:config?.renamedDefault};
   }).sort((a,b)=>a.position-b.position);
 }
 function editFrontCategory(name){
@@ -954,6 +958,37 @@ function editFrontCategory(name){
       if(existing)Object.assign(existing,changes);
       else categories.push({name,parent:'',...changes});
     });
+  });
+}
+function renameCategory(name,parent=''){
+  const front=parent?null:frontCategories().find(c=>c.name===name);
+  if(!parent&&!front)return;
+  const label=parent?'Editar subcategoria':'Editar categoria';
+  fields(label,input('Nome','name',name,'text','required maxlength="80"'),async values=>{
+    const updated=values.name.trim().normalize('NFC');
+    if(!updated)throw Error('Informe o nome.');
+    if(updated===name)return;
+    await save(next=>{
+      const configs=next.categories??=[];
+      const config=configs.find(c=>(c.parent||'')===parent&&c.name===name);
+      const names=parent?configs.filter(c=>c.parent===parent).map(c=>c.name):productCategories(next);
+      if(!names.includes(name))throw review('A categoria mudou. Confira a lista.');
+      if(names.some(other=>other!==name&&other.normalize('NFC').toLocaleLowerCase('pt-BR')===updated.toLocaleLowerCase('pt-BR')))
+        throw Error('Já existe uma categoria com esse nome neste nível.');
+      if(config)config.name=updated;
+      else configs.push({name:updated,parent:'',position:front.position});
+      if(!parent){
+        const renamed=config||configs.at(-1);
+        if(defaultCategories.includes(name))renamed.renamedDefault??=name;
+        for(const child of configs)if(child.parent===name)child.parent=updated;
+      }
+      for(const product of next.products){
+        if(!parent&&product.category===name)product.category=updated;
+        if(parent&&product.category===parent&&product.subcategory===name)product.subcategory=updated;
+      }
+    });
+    if(!parent&&category===name)category=updated;
+    notice('Nome atualizado.');
   });
 }
 let showCategories=false;
@@ -1048,14 +1083,41 @@ function backProductMatches(product,query,withoutPrice){
   return (!withoutPrice||missingProductPrice(product)) &&
     [product.name,product.code,product.barcode].some(value=>normalizeProductQuery(value).includes(query));
 }
+function usedProductIds(state){
+  const ids=new Set();
+  for(const records of [state.sales,state.tables,state.closedTables,state.tableCancellations,state.itemRemovals]){
+    for(const record of records||[]){
+      for(const item of [...(record.items||[]),...(record.draft||[])]){
+        ids.add(item.productId||item.id);
+      }
+      if(record.productId)ids.add(record.productId);
+    }
+  }
+  return ids;
+}
+function deleteUnusedProduct(id){
+  if(!canView('back'))return;
+  const product=data.products.find(p=>p.id===id);
+  if(!product)return;
+  fields('Excluir produto','<p>Excluir <strong>'+esc(product.name)+'</strong> do cadastro?</p>',async()=>{
+    await save(next=>{
+      if(usedProductIds(next).has(id)||order().some(item=>(item.productId||item.id)===id))
+        throw Error('Este produto tem lançamentos e não pode ser excluído.');
+      next.products=next.products.filter(p=>p.id!==id);
+    });
+    notice('Produto excluído.');
+  },'Excluir produto');
+}
 function renderBackProducts(){
   const query=normalizeProductQuery(productQuery);
   const products=data.products.filter(p=>backProductMatches(p,query,productsWithoutPrice));
+  const used=usedProductIds(data);
+  for(const item of order())used.add(item.productId||item.id);
   $('#back-product-count').textContent=products.length+' de '+data.products.length+' produto(s)';
   $('#back-product-list').innerHTML=products.length?table(['Produto','Categoria','Unidade','Estoque','Preço',''],
     products.map(p=>[esc(p.name),esc(p.category)+(p.subcategory?' / '+esc(p.subcategory):''),p.unit==='kg'?'KG':'UN',
       p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':missingProductPrice(p)?'Sem preço':money(p.price),
-      edit('products',p.id)+' '+frontProductButton(p)])):'<p>Nenhum produto encontrado.</p>';
+      edit('products',p.id)+' '+frontProductButton(p)+(used.has(p.id)?'':' <button data-delete-product="'+esc(p.id)+'">Excluir</button>')])):'<p>Nenhum produto encontrado.</p>';
 }
 const businessDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Bahia',year:'numeric',month:'2-digit',day:'2-digit'});
 const receiptDate=value=>{
@@ -1171,8 +1233,8 @@ function back(){
       content+='<button data-product-categories aria-expanded="'+showCategories+'">Categorias</button>';
       if(showCategories)content+='<h2>Categorias de produtos</h2><button data-new-category>Nova categoria ou subcategoria</button>'+
         table(['Categoria','Subcategorias','Na tela de vendas','Ordem',''],frontCategories().map(c=>[
-          esc(c.name),subcategories(c.name).map(esc).join(', ')||'—',c.hidden?'Oculta':'Visível',c.position,
-          '<button data-front-category="'+esc(c.name)+'">Configurar no caixa</button>'
+          esc(c.name),subcategories(c.name).map(name=>esc(name)+' <button data-rename-category="'+esc(name)+'" data-category-parent="'+esc(c.name)+'" aria-label="Editar '+esc(name)+'">Editar</button>').join('<br>')||'—',c.hidden?'Oculta':'Visível',c.position,
+          '<button data-rename-category="'+esc(c.name)+'">Editar</button> <button data-front-category="'+esc(c.name)+'">Configurar no caixa</button>'
         ]));
       content+='<p><label for="back-product-query">Localizar produto</label> '+
         '<input id="back-product-query" type="search" placeholder="Nome ou código" value="'+esc(productQuery)+'"> '+
@@ -1391,7 +1453,7 @@ function removeItem(preselected){
         if(!line.qty) current.items.splice(Number(key),1);
         if(tableTotal(current)<tablePaid(current)) throw Error('A retirada deixaria o total abaixo do valor já pago.');
       }
-      (next.itemRemovals??=[]).push({time:date(),operator,table:t?.id,name:item.name,price:item.price});
+      (next.itemRemovals??=[]).push({time:date(),operator,table:t?.id,productId:item.productId||item.id,name:item.name,price:item.price});
     },true);
     if(!saved){cart[key]=item.unit==='kg'?0:cart[key]-1;if(!order().length) counterService=true;}
   },'Sim','Não');
@@ -1453,6 +1515,8 @@ document.addEventListener('click',e=>{
   if(button.id==='cash'||d.cash!==undefined)cash();
   if(d.productCategories!==undefined){showCategories=!showCategories;render();}
   if(d.newCategory!==undefined)createCategory();
+  if(d.renameCategory!==undefined && canView('back'))renameCategory(d.renameCategory,d.categoryParent);
+  if(d.deleteProduct!==undefined)deleteUnusedProduct(d.deleteProduct);
   if(d.frontCategory!==undefined)editFrontCategory(d.frontCategory);
   if(d.frontProduct!==undefined)editFrontProduct(d.frontProduct);
   if(d.edit)record(d.edit,d.id,d.categoryBill);
