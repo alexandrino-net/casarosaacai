@@ -1220,7 +1220,7 @@ function back(){
   }else if(tab==='Impressora'){content=printerPanel();}
   else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
-    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button data-backup>Exportar dados</button></div>`;
+    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button type="button" class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button><button data-backup>Exportar dados</button></div>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total','Comprovante'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total),
       s.partial?'':'<button data-reprint="'+esc(s.id)+'">Reimprimir</button>']))}
