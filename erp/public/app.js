@@ -121,7 +121,7 @@ const select=(label,name,options,value)=>`<label>${label}<select required name="
 const customItems=new Map();
 const lineTotal=(price,qty)=>Math.round(price*Math.round(qty*1000)/1000);
 const qtyLabel=item=>item.unit==='kg'?item.qty.toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})+' kg':String(item.qty);
-const order=()=>[...data.products,...customItems.values()].filter(p=>cart[p.id]>0).map(p=>({...p,qty:cart[p.id],total:lineTotal(p.price,cart[p.id])}));
+const order=()=>[...data.products,...customItems.values()].filter(p=>cart[p.id]>0).map(({externalImage,...p})=>({...p,qty:cart[p.id],total:lineTotal(p.price,cart[p.id])}));
 function addProduct(id,quantity,focus='#search'){
   const product=customItems.get(id)||data.products.find(p=>p.id===id);
   if(!product)return;
@@ -188,6 +188,32 @@ function editFrontProduct(id){
       notice('Ordem dos produtos atualizada.');
     });
 }
+function productPhoto(product){
+  const image=product.externalImage;
+  if(typeof image==='string' && image.length<=32768 && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(image))return image;
+  return Number.isInteger(product.image)?'/img/'+product.image+'.jpg':'';
+}
+async function encodeProductPhoto(file){
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>10*1024*1024)
+    throw Error('Escolha uma imagem JPG, PNG ou WebP de até 10 MB.');
+  let bitmap;
+  try{bitmap=await createImageBitmap(file);}
+  catch{throw Error('Não foi possível abrir a imagem escolhida.');}
+  try{
+    const canvas=document.createElement('canvas'), context=canvas.getContext('2d');
+    for(const edge of [640,480,320,240]){
+      const scale=Math.min(1,edge/Math.max(bitmap.width,bitmap.height));
+      canvas.width=Math.max(1,Math.round(bitmap.width*scale));
+      canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+      context.fillStyle='#fff';
+      context.fillRect(0,0,canvas.width,canvas.height);
+      context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+      const image=canvas.toDataURL('image/jpeg',0.76);
+      if(image.startsWith('data:image/jpeg;base64,')&&image.length<=32768)return image;
+    }
+    throw Error('A imagem não coube no cadastro. Escolha outra foto.');
+  }finally{bitmap.close();}
+}
 function updateCatalog(){
   const filter=search.split('*')[0];
   for (const button of document.querySelectorAll('[data-category]')) {
@@ -196,7 +222,7 @@ function updateCatalog(){
     button.setAttribute('aria-pressed', String(selected));
   }
   const products=filter ? data.products.filter(p=>[p.code,p.barcode].some(code=>code?.startsWith(filter))) : frontProducts(data,category);
-  $('#products').innerHTML=products.map(p=>`<article class="card">${Number.isInteger(p.image)?`<img src="/img/${p.image}.jpg" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${(p.variable?'Preço na venda':money(p.price)+(p.unit==='kg'?' / kg':''))}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div>${!filter&&canView('back')?frontProductButton(p):''}</article>`).join('')||'Nenhum produto encontrado.';
+  $('#products').innerHTML=products.map(p=>{const photo=productPhoto(p);return `<article class="card">${photo?`<img src="${photo}" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${(p.variable?'Preço na venda':money(p.price)+(p.unit==='kg'?' / kg':''))}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div>${!filter&&canView('back')?frontProductButton(p):''}</article>`;}).join('')||'Nenhum produto encontrado.';
 }
 function tableOrder() {
   return data.tables.find(t => t.id === selectedTable);
@@ -802,7 +828,10 @@ function record(key,id,billCategory){
   if(isBill){
     html=(key==='pagar'?select('Classificação','category',[['geral','Geral'],['fixos','Custos fixos'],['impostos','Impostos']],old?.category||billCategory||'geral'):'')+select(key==='pagar'?'Fornecedor':'Cliente','party',(key==='pagar'?[['','Sem fornecedor'],...parties.map(p=>[p.id,p.name])]:parties.map(p=>[p.id,p.name])),old?.party).replace(key==='pagar'?' required':'__unused__','')+input('Descrição','description',old?.description)+amount('Valor','amount',old?old.amount/100:'','.01')+input('Vencimento','due',old?.due,'date');
   } else if(key==='products'){
-    html=input('Nome','name',old?.name)+input('Código do item','code',old?.code,'text','inputmode="numeric" maxlength="30"')+input('Código de barras','barcode',old?.barcode,'text','inputmode="numeric" maxlength="80"')+select('Unidade de medida','unit',[['un','UN'],['kg','KG']],old?.unit||'un')+select('Categoria','category',productCategories().map(c=>[c,c]),old?.category)+'<div id="product-subcategory"></div>'+amount('Preço por unidade de medida','price',old?old.price/100:'',old?.variable?'0':'.01')+input('Estoque atual','stock',old?.stock==null?'':old.stock/1000,'number','step="0.001"')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','');
+    html=input('Nome','name',old?.name)+input('Código do item','code',old?.code,'text','inputmode="numeric" maxlength="30"')+input('Código de barras','barcode',old?.barcode,'text','inputmode="numeric" maxlength="80"')+select('Unidade de medida','unit',[['un','UN'],['kg','KG']],old?.unit||'un')+select('Categoria','category',productCategories().map(c=>[c,c]),old?.category)+'<div id="product-subcategory"></div>'+amount('Preço por unidade de medida','price',old?old.price/100:'',old?.variable?'0':'.01')+input('Estoque atual','stock',old?.stock==null?'':old.stock/1000,'number','step="0.001"')+select('Foto do produto','image',[['','Sem foto'],...['Açaí 300 ml','Açaí 500 ml','Açaí 700 ml','Morango','Granola','Água mineral','Logo','Açaí do cardápio','Expresso','Café preto','Café com leite','Chocolate','Pão com manteiga','Pão com ovo','Misto','Sanduíche completo','Omelete','Nutri Verde','Copo Equilíbrio','Juice Sun','Suco roxo','Suco claro','Suco amarelo','Suco vermelho','Vitamina roxa','Vitamina clara','Vitamina de mamão'].map((n,i)=>[String(i),n])],old?.image==null?'':String(old.image)).replace(' required','')+
+      '<label>Enviar imagem do computador<input name="productPhoto" type="file" accept="image/jpeg,image/png,image/webp"></label>'+
+      (old?.externalImage?'<p>Este produto usa uma imagem enviada.</p><label><span><input type="checkbox" name="removeExternalImage"> Remover imagem enviada e usar a foto selecionada acima</span></label>':'')+
+      '<small>JPG, PNG ou WebP de até 10 MB. A imagem é redimensionada para aparecer no caixa.</small>';
   } else {
     html=input('Nome','name',old?.name)+input('CPF / CNPJ','doc',old?.doc,'text','')+input('Telefone ou e-mail','contact',old?.contact,'text','')+amount('Limite de crédito','limit',old?old.limit/100:'0');
   }
@@ -828,6 +857,11 @@ function record(key,id,billCategory){
         throw Error('Informe estoque inteiro para UN ou até três casas decimais para KG.');
       v.stock=stock===null?null:Math.round(stock*1000);
       v.price=cents(v.price);v.image=v.image===''?null:Number(v.image);
+      const photo=v.productPhoto;
+      if(photo?.size)v.externalImage=await encodeProductPhoto(photo);
+      else if(v.removeExternalImage)v.externalImage=null;
+      delete v.productPhoto;
+      delete v.removeExternalImage;
     } else {
       if(key==='customers') v.cycleDay=v.cycle==='manual'?null:Number(v.cycleDay);
       v.limit=cents(v.limit);
