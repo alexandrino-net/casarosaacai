@@ -159,3 +159,64 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   .receipt-dialog[data-paper="58"] .receipt-paper { padding:1.5mm;font-size:9pt; }
   .receipt-dialog[data-paper="58"] .receipt-total { font-size:13pt; }
 }
+
+.pos:is([data-sale-layout="compact"],[data-sale-layout="list"]) {
+  gap:10px;
+  background:var(--canvas);
+  border:0;
+  box-shadow:none;
+}
+.pos:is([data-sale-layout="compact"],[data-sale-layout="list"]) :is(.catalog,.order) {
+  padding:clamp(12px,1.5vw,20px);
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--paper);
+}
+.pos:is([data-sale-layout="compact"],[data-sale-layout="list"]) #products .card {
+  border-radius:10px;
+}
+.pos:is([data-sale-layout="compact"],[data-sale-layout="list"]) #products .add {
+  flex:0 0 34px;
+  height:34px;
+  border-radius:8px;
+  background:var(--tint);
+  color:var(--brand);
+}
+.pos[data-sale-layout="compact"] #products :is(.card img,.placeholder) {
+  height:clamp(56px,10vh,76px);
+}
+.pos[data-sale-layout="list"] #products {
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,186px),1fr));
+}
+.pos[data-sale-layout="list"] #products .card {
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr);
+  gap:4px;
+  align-items:center;
+  padding:5px;
+}
+.pos[data-sale-layout="list"] #products .card :is(img,.placeholder) {
+  width:44px;height:44px;border-radius:7px;font-size:20px;
+}
+.pos[data-sale-layout="list"] #products .card .product-position {
+  grid-column:1/-1;
+  justify-self:start;
+  margin:0;
+}
+.pos:is([data-sale-layout="compact"],[data-sale-layout="list"]) .order .line {
+  padding:15px 2px;
+}
+.pos[data-sale-layout="list"] .order .line { padding-block:18px; }
+.pos:is([data-sale-layout="compact"],[data-sale-layout="list"]) .order .line .split {
+  align-items:start;
+  gap:12px;
+}
+.pos:is([data-sale-layout="compact"],[data-sale-layout="list"]) .order .line .split span {
+  white-space:nowrap;
+  font-weight:750;
+}
+.sale-unit-price { display:block;margin-top:4px;color:var(--muted); }
+@media(min-width:761px) {
+  .pos[data-sale-layout="compact"] { grid-template-columns:minmax(0,3fr) minmax(350px,2fr); }
+  .pos[data-sale-layout="list"] { grid-template-columns:minmax(0,1.05fr) minmax(360px,1fr); }
+}

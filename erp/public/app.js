@@ -470,12 +470,34 @@ function bindNameSearch(){
   };
   $('#focus-code').onclick=focusCode;
 }
+const salesLayouts=[
+  ['current','Atual'],
+  ['compact','A · Cartões compactos'],
+  ['list','B · Lista com miniaturas']
+];
+const salesLayoutKey='casa-rosa:layout-vendas';
+function salesLayout(){
+  try{
+    const saved=localStorage.getItem(salesLayoutKey);
+    return salesLayouts.some(([id])=>id===saved)?saved:'current';
+  }catch{return 'current';}
+}
+function saveSalesLayout(event){
+  event.preventDefault();
+  const choice=new FormData(event.currentTarget).get('layout');
+  if(!salesLayouts.some(([id])=>id===choice))return;
+  try{
+    localStorage.setItem(salesLayoutKey,choice);
+    notice('Layout salvo. Abra Vendas para ver a mudança.');
+  }catch{notice('Não foi possível guardar o layout neste dispositivo.');}
+}
 function sales(){
+  const layout=salesLayout();
   const categories=frontCategories().filter(c=>!c.hidden);
   if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
-  <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${qtyLabel(p)}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
+  app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line"><div class="split"><div><strong>${esc(p.name)}</strong>${layout==='current'?'':'<small class="sale-unit-price">'+money(p.price)+(p.unit==='kg'?' / kg':' / un.')+'</small>'}</div><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${qtyLabel(p)}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
     $('.catalog h1').textContent = 'Mesa ' + t.id + (t.name ? ' — ' + t.name : '');
@@ -923,10 +945,14 @@ function renderBackProducts(){
       edit('products',p.id)+' '+frontProductButton(p)])):'<p>Nenhum produto encontrado.</p>';
 }
 function back(){
-  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
+  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Configurações','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
   const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
   let content='';
-  if(tab==='Restaurar base do PC'){
+  if(tab==='Configurações'){
+    content='<h2>Layout do caixa</h2><p>Escolha o visual da tela de vendas neste navegador ou computador.</p>'+
+      '<form id="sales-layout-settings">'+select('Layout da tela de vendas','layout',salesLayouts,salesLayout())+
+      '<button class="primary">Salvar layout</button></form>';
+  }else if(tab==='Restaurar base do PC'){
     content='<h2>Restaurar base do PC</h2><p>Esta ação substitui os dados operacionais online pelo arquivo do PC. O ERP guarda a base anterior e mantém os usuários e acessos.</p>'+
       '<form id="restore-pc"><label>Base oficial do PC<input name="base" type="file" accept=".json,application/json" required></label>'+
       '<label>Digite RESTAURAR BASE DO PC<input name="confirmation" autocomplete="off" required></label>'+
@@ -973,6 +999,7 @@ function back(){
     $('#back-product-unpriced').onchange=e=>{productsWithoutPrice=e.target.checked;renderBackProducts();};
     renderBackProducts();
   }
+  if(tab==='Configurações')$('#sales-layout-settings').onsubmit=saveSalesLayout;
   if(tab==='Impressora')$('#printer-settings').onsubmit=savePrinterSettings;
   if(tab==='Restaurar base do PC')$('#restore-pc').onsubmit=restorePcBase;
   if(tab==='Atualizações')void localUpdateStatus();
