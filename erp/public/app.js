@@ -878,11 +878,44 @@ async function sendLocalPending(){
   }catch(error){result.textContent=error.message;}
   finally{busy=false;button.disabled=false;void localUpdateStatus();}
 }
+async function restorePcBase(event){
+  event.preventDefault();
+  if(busy)return;
+  const form=event.currentTarget, result=$('#restore-pc-result');
+  const values=new FormData(form);
+  if(values.get('confirmation')!=='RESTAURAR BASE DO PC'){
+    result.textContent='Digite RESTAURAR BASE DO PC para confirmar.';
+    return;
+  }
+  const expectedRev=data.rev;
+  busy=true;
+  const button=form.querySelector('button');
+  button.disabled=true;
+  try{
+    const file=values.get('base');
+    if(!file?.size||file.size>19000000)throw Error('Selecione a Base-Oficial-Casa-Rosa.json de até 19 MB.');
+    const base=JSON.parse(await file.text());
+    if(base.format!=='casa-rosa-base-pc-v1')throw Error('Selecione a base oficial gerada pelo exportador do PC.');
+    result.textContent='Guardando a base atual e restaurando a base do PC…';
+    const response=await fetch('/api/restaurar-pc',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base,expectedRev,confirmation:values.get('confirmation')})});
+    const outcome=await response.json();
+    if(!response.ok)throw Error(outcome.error||'Não foi possível restaurar.');
+    result.textContent='Base restaurada. Revisão '+outcome.revision+' · Cópia online nº '+outcome.backup+'. Atualize a página antes de trabalhar.';
+    form.reset();
+  }catch(error){result.textContent=error.message;}
+  finally{busy=false;button.disabled=false;}
+}
 function back(){
-  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Impressora',...(localStation?['Atualizações']:[]),...(session?.admin?staffTabs:[])];
+  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
   const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
   let content='';
-  if(tab==='Atualizações'){
+  if(tab==='Restaurar base do PC'){
+    content='<h2>Restaurar base do PC</h2><p>Esta ação substitui os dados operacionais online pelo arquivo do PC. O ERP guarda a base anterior e mantém os usuários e acessos.</p>'+
+      '<form id="restore-pc"><label>Base oficial do PC<input name="base" type="file" accept=".json,application/json" required></label>'+
+      '<label>Digite RESTAURAR BASE DO PC<input name="confirmation" autocomplete="off" required></label>'+
+      '<button class="primary">Restaurar base do PC</button></form><p id="restore-pc-result" role="status"></p>';
+  }else if(tab==='Atualizações'){
     content='<h2>Atualizações deste PC</h2><p>Versão da interface: <strong id="local-interface-version">Consultando…</strong></p>'+
       '<p id="local-sync-status" role="status">Consultando a sincronização…</p>'+
       '<button class="primary" data-receive-update>Receber atualizações</button> <button data-send-pending>Enviar pendências</button><p id="local-update-result" role="status"></p>';
@@ -917,6 +950,7 @@ function back(){
   }
   app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="panel">${content}</div></section>`;
   if(tab==='Impressora')$('#printer-settings').onsubmit=savePrinterSettings;
+  if(tab==='Restaurar base do PC')$('#restore-pc').onsubmit=restorePcBase;
   if(tab==='Atualizações')void localUpdateStatus();
 }
 function record(key,id,billCategory){

@@ -363,6 +363,52 @@ const server = http.createServer(async (req, res) => {
     try{return reply(200,await staff.directory());}catch{return reply(503,{error:'Lista de funcionários indisponível.'});}
   }
   if(url==='/api/sessao') return reply(200,actor);
+  if(url==='/api/restaurar-pc' && req.method==='POST'){
+    if(!actor.admin)return reply(403,{error:'A restauração exige um administrador.'});
+    if(req.headers.origin!==origin || req.headers['content-type']!=='application/json')
+      return reply(403,{error:'Origem inválida.'});
+    let body='';
+    try{
+      for await(const chunk of req){
+        body+=chunk;
+        if(body.length>20000000)return reply(413,{error:'Arquivo grande demais.'});
+      }
+      const {base,expectedRev,confirmation}=JSON.parse(body);
+      const next=base?.state;
+      if(confirmation!=='RESTAURAR BASE DO PC' || !Number.isSafeInteger(expectedRev) ||
+        base?.format!=='casa-rosa-base-pc-v1' || !Number.isSafeInteger(next?.rev) ||
+        !['sales','products','customers','suppliers','bills','shifts','tables','operations'].every(key=>Array.isArray(next?.[key])) ||
+        next.operations.length>1024 || !next.operations.every(id=>typeof id==='string'&&/^[0-9a-f-]{36}$/i.test(id)))
+        return reply(400,{error:'Arquivo ou confirmação inválida. Gere novamente a base oficial no PC.'});
+      if(next.cash && (typeof next.cash.id!=='string'||!Number.isFinite(Date.parse(next.cash.opened))||!Number.isSafeInteger(next.cash.initial)))
+        return reply(400,{error:'Abertura do caixa inválida.'});
+      if(!pool)return reply(503,{error:'A restauração requer o banco online configurado.'});
+      const client=await pool.connect();
+      try{
+        await client.query('BEGIN');
+        const {rows}=await client.query('SELECT payload FROM casa_rosa_state WHERE id=1 FOR UPDATE');
+        const previous=rows[0]?.payload;
+        if(previous?.rev!==expectedRev){
+          await client.query('ROLLBACK');
+          return reply(409,{error:'A nuvem mudou. Atualize a página e confira antes de restaurar.'});
+        }
+        await client.query('CREATE TABLE IF NOT EXISTS casa_rosa_restore_backup (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, saved_at timestamptz NOT NULL DEFAULT now(), actor text NOT NULL, payload jsonb NOT NULL)');
+        const backup=await client.query('INSERT INTO casa_rosa_restore_backup (actor,payload) VALUES ($1,$2::jsonb) RETURNING id',[actor.login,JSON.stringify(previous)]);
+        next.rev=expectedRev+1;
+        const written=await client.query('UPDATE casa_rosa_state SET payload=$1::jsonb WHERE id=1 RETURNING payload',[JSON.stringify(next)]);
+        if(written.rowCount!==1 || written.rows[0].payload.rev!==next.rev)throw Error('Base não gravada.');
+        await client.query('COMMIT');
+        return reply(200,{revision:next.rev,backup:backup.rows[0].id});
+      }catch(error){
+        await client.query('ROLLBACK');
+        throw error;
+      }finally{client.release();}
+    }catch(error){
+      if(error instanceof SyntaxError)return reply(400,{error:'JSON inválido.'});
+      console.error('Falha na restauração do ERP:',error.code||error.name);
+      return reply(500,{error:'Não foi possível confirmar a restauração. Confira a revisão online antes de tentar novamente.'});
+    }
+  }
   if(url==='/api/equipe') {
     if(!actor.admin) return reply(403,{error:'Acesso exclusivo da administração.'});
     try {
