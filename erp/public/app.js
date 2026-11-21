@@ -511,18 +511,24 @@ function saveSalesLayout(event){
 const backgroundKey='casa-rosa:fundo-pdv';
 const builtInBackgrounds=[{"credit": "Karina m roque · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Por_do_Sol_Praia_das_Conchas_Itacar%C3%A9.jpeg", "name": "Praia das Conchas"}, {"credit": "Marinelson Almeida Silva · CC BY 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_de_Itacar%C3%A9zinho_-_Itacar%C3%A9_-_Bahia_-_Brasil_(8552602430).jpg", "name": "Praia de Itacarezinho"}, {"credit": "LíviaBuhring · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Itacar%C3%A9_Praia_Cidade.JPG", "name": "Orla de Itacaré"}, {"name": "Pôr do sol em Itacaré", "credit": "Renato Castanhari Jr · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Sunset_Itacare.jpg"}, {"name": "Praia de Itacaré", "credit": "ACALME · CC BY 4.0", "source": "https://commons.wikimedia.org/wiki/File:Foto_ITACAR%C3%89_2.jpg"}, {"name": "Engenhoca · vista da praia", "credit": "Vaolsu · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Engenhoca%2C_Itacar%C3%A9-BA.jpg"}, {"name": "Engenhoca · orla", "credit": "Marinelson Almeida · CC BY 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_de_Engenhoca_-_Itacar%C3%A9_-_Ba._%288552584858%29.jpg"}, {"name": "Tiririca · vista da praia", "credit": "MikutoH · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Tiririca%2C_Itacar%C3%A9%2C_Bahia.jpg"}, {"name": "Tiririca · orla", "credit": "Eduardo Loureiro · CC BY-SA 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Tiririca.jpg"}, {"name": "Prainha", "credit": "FlaviaC · CC BY 3.0", "source": "https://commons.wikimedia.org/wiki/File:Prainha.JPG"}, {"name": "Coroinha", "credit": "Teles · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Coroinha_2.jpg"}, {"name": "Resende", "credit": "Matheus de Souza Silva · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_do_Resende_em_Itacar%C3%A9%2C_Bahia.jpg"}].map((photo,index)=>({...photo,id:String(index+27),src:'/img/'+(index+27)+'.jpg'}));
 let backgroundIndex=0;
+function panelTransparency(value){
+  if(value==null || value==='')return 6;
+  const number=Number(value);
+  return Number.isFinite(number)?Math.max(0,Math.min(50,Math.round(number))):6;
+}
 function backgroundSettings(){
   try{
     const saved=JSON.parse(localStorage.getItem(backgroundKey)||'{}');
     const custom=Array.isArray(saved.custom)?saved.custom.filter(p=>p&&typeof p.name==='string'&&typeof p.id==='string'&&
       typeof p.src==='string'&&p.src.length<=240000&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.src)):[];
-    return {mode:['rotate','fixed','off'].includes(saved.mode)?saved.mode:'rotate',fixed:saved.fixed,custom};
-  }catch{return {mode:'rotate',custom:[]};}
+    return {mode:['rotate','fixed','off'].includes(saved.mode)?saved.mode:'rotate',fixed:saved.fixed,custom,transparency:panelTransparency(saved.transparency)};
+  }catch{return {mode:'rotate',custom:[],transparency:6};}
 }
 function paintSalesBackground(advance=false){
   const panel=$('.pos');
   if(!panel)return;
   const settings=backgroundSettings();
+  panel.style.setProperty('--sale-panel-opacity',(100-settings.transparency)/100);
   const photos=[...builtInBackgrounds,...settings.custom];
   panel.classList.toggle('sale-landscape',settings.mode!=='off');
   if(settings.mode==='off'){panel.style.removeProperty('--sale-landscape');return;}
@@ -536,6 +542,9 @@ function backgroundPanel(){
   return '<h2>Fundo da tela de vendas</h2><form id="sales-background-settings">'+
     select('Exibição','mode',[['rotate','Rotativo · a cada 3 minutos'],['fixed','Imagem fixa'],['off','Sem imagem']],settings.mode)+
     select('Foto para o modo fixo','fixed',photos.map(p=>[p.id,p.name]),settings.fixed||photos[0].id)+
+    '<div class="pos-transparency"><label for="pos-transparency">Transparência dos painéis <output id="pos-transparency-value" for="pos-transparency">'+settings.transparency+'%</output></label>'+
+    '<input id="pos-transparency" name="transparency" type="range" min="0" max="50" value="'+settings.transparency+'">'+
+    '<p>Quanto maior a porcentagem, mais visível fica a foto atrás dos produtos e do pedido.</p></div>'+
     '<label>Adicionar foto<input name="backgroundPhoto" type="file" accept="image/jpeg,image/png,image/webp"></label>'+
     '<button class="primary">Salvar fundo</button><p id="sales-background-result" role="status"></p></form>'+
     (settings.custom.length?'<h3>Fotos adicionadas</h3><ul>'+settings.custom.map(p=>'<li>'+esc(p.name)+' <button data-remove-background="'+esc(p.id)+'">Remover</button></li>').join('')+'</ul>':'')+
@@ -558,6 +567,7 @@ async function saveBackground(event){
   try{
     settings.mode=mode;
     settings.fixed=fixed;
+    settings.transparency=panelTransparency(values.get('transparency'));
     if(file?.size){
       const src=await encodeProductPhoto(file,240000,[1280,1080,900,720]);
       const id=crypto.randomUUID();
@@ -1166,6 +1176,7 @@ function back(){
   if(tab==='Configurações'){
     $('#sales-layout-settings').onsubmit=saveSalesLayout;
     $('#sales-background-settings').onsubmit=saveBackground;
+    $('#pos-transparency').oninput=event=>{ $('#pos-transparency-value').value=event.target.value+'%'; };
   }
   if(tab==='Impressora')$('#printer-settings').onsubmit=savePrinterSettings;
   if(tab==='Restaurar base do PC')$('#restore-pc').onsubmit=restorePcBase;

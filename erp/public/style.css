@@ -242,7 +242,7 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   gap:8px;
 }
 .pos.sale-landscape :is(.catalog,.order) {
-  background:#fffdfaf0;
+  background:rgba(255,253,250,var(--sale-panel-opacity,.94));
   border-radius:12px;
 }
 #sales-background-settings { margin-bottom:14px; }
@@ -305,3 +305,6 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 @media(max-width:760px) {
   .pos { min-height:calc(100dvh - 104px); }
 }
+
+.pos-transparency input[type=range] { width:100%; padding:0; accent-color:#6d3652; }
+.pos-transparency output { font-weight:700; margin-left:8px; }
