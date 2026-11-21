@@ -1082,23 +1082,32 @@ function cashMethods(entry){
     return [method==='Cartão'?'Cartão sem identificação':method,values.amount,values.count];
   });
 }
+let summaryDay='';
 function dailyCashSummary(state){
   const today=receiptDate(new Date());
-  const days=cashDays(state,today), current=days.get(today);
-  const methods=cashMethods(current);
+  const yesterday=new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
+  const days=cashDays(state,today);
+  const selected=days.has(summaryDay)?summaryDay:today;
+  const isToday=selected===today;
+  const methods=cashMethods(days.get(selected));
   const total=methods.reduce((sum,[,amount])=>sum+amount,0);
+  const dayStatus=(day,entry)=>day===today?(state.cash?'Aberto':'Fechado'):
+    day===receiptDate(state.cash?.opened)?'Aberto':entry.closed?'Fechado':'Registrado';
   const cards=methods.map(([method,amount,count])=>
     '<article class="daily-cash-card"><span>'+esc(method)+'</span><strong>'+money(amount)+'</strong><small>'+count+' recebimento(s)</small></article>').join('');
-  const history=[...days].sort(([a],[b])=>b.localeCompare(a)).map(([day,entry])=>
-    '<details><summary><strong>'+esc(displayCashDate(day))+(day===today?' · Hoje':'')+'</strong> <span>'+
-      entry.count+' recebimento(s) · '+entry.closed+' fechamento(s)</span></summary>'+
-      table(['Forma de recebimento','Valor','Recebimentos'],cashMethods(entry).map(([method,amount,count])=>[esc(method),money(amount),count]))+
-    '</details>').join('');
-  return '<section class="daily-cash"><div class="daily-cash-head"><div><h2>Caixa de hoje</h2><p>'+
-    esc(displayCashDate(today))+' · Caixa '+(state.cash?'aberto':'fechado')+'</p></div>'+
-    '<details class="daily-cash-total"><summary>Mostrar total de hoje</summary><p><strong>'+money(total)+'</strong></p></details></div>'+
-    '<h3>Recebimentos por forma de pagamento</h3><div class="daily-cash-cards">'+cards+'</div>'+
-    '<section class="daily-cash-history"><h3>Resumo dos caixas por dia</h3>'+history+'</section></section>';
+  const history=[...days].sort(([a],[b])=>b.localeCompare(a)).map(([day,entry])=>{
+    const formatted=displayCashDate(day);
+    const name=day===today?'Hoje':day===yesterday?'Ontem':formatted.slice(0,5);
+    return '<button type="button" data-summary-day="'+esc(day)+'" aria-pressed="'+(day===selected)+'"><span>'+
+      esc(name)+' · '+dayStatus(day,entry)+'</span><small>'+esc(formatted)+'</small></button>';
+  }).join('');
+  return '<div class="daily-cash-layout"><aside class="daily-cash-history panel"><h3>Resumo dos caixas por dia</h3>'+
+    '<div class="daily-cash-days">'+history+'</div></aside>'+
+    '<section class="daily-cash panel"><div class="daily-cash-head"><div><h2>'+
+    (isToday?'Caixa de hoje':'Caixa de '+esc(displayCashDate(selected)))+'</h2><p>'+esc(displayCashDate(selected))+' · '+
+    (isToday?'Caixa '+dayStatus(selected,days.get(selected)).toLocaleLowerCase('pt-BR'):dayStatus(selected,days.get(selected)))+'</p></div>'+
+    (isToday?'<details class="daily-cash-total"><summary><span>Mostrar total de hoje</span><span>Ocultar total de hoje</span></summary><p><strong>'+money(total)+'</strong></p></details>':'')+'</div>'+
+    '<h3>Recebimentos por forma de pagamento</h3><div class="daily-cash-cards">'+cards+'</div></section></div>';
 }
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Configurações','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
@@ -1119,7 +1128,7 @@ function back(){
   }else if(tab==='Impressora'){content=printerPanel();}
   else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
-    content=dailyCashSummary(data)+`<button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
+    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button></div>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total','Comprovante'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total),
       s.partial?'':'<button data-reprint="'+esc(s.id)+'">Reimprimir</button>']))}
@@ -1148,7 +1157,7 @@ function back(){
       content+=table(['Descrição','Cliente / fornecedor','Vencimento','Valor','Situação',''],data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)).map(b=>[esc(b.description),esc(partyName(b)),esc(b.due.split('-').reverse().join('/')),money(b.amount),b.paid?'Liquidado em '+stamp(b.paid)+(b.payments||[]).map(p=>'<br>'+esc(p.method)+' '+money(p.amount)).join(''):b.receipts?.length?'Parcial · saldo '+money(creditRules.remaining(b)):'Em aberto',b.paid?'':(b.receipts?.length?'':edit(billKind,b.id))+` <button data-settle="${b.id}">${billKind==='pagar'?'Dar baixa no pagamento':'Dar baixa no recebimento'}</button>`]));
     }
   }
-  app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="panel">${content}</div></section>`;
+  app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="${tab==='Resumo'?'cash-summary-content':'panel'}">${content}</div></section>`;
   if(tab==='products'){
     $('#back-product-query').oninput=e=>{productQuery=e.target.value;renderBackProducts();};
     $('#back-product-unpriced').onchange=e=>{productsWithoutPrice=e.target.checked;renderBackProducts();};
@@ -1424,6 +1433,12 @@ document.addEventListener('click',e=>{
   if(d.receiveUpdate!==undefined){void receiveLocalUpdate();return;}
   if(d.printTest!==undefined){testPrint();return;}
   if(d.reprint!==undefined){reprintReceipt(d.reprint,d.reprintTable!==undefined);return;}
+  if(d.summaryDay && view==='back' && tab==='Resumo'){
+    summaryDay=d.summaryDay;
+    $('#daily-cash-summary').innerHTML=dailyCashSummary(data);
+    $('#daily-cash-summary [aria-pressed="true"]')?.focus({preventScroll:true});
+    return;
+  }
   if(d.backup!==undefined){
     const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download='casa-rosa-dados.json';link.click();

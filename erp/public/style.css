@@ -247,32 +247,47 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 }
 #sales-background-settings { margin-bottom:14px; }
 
-.daily-cash-total { margin:14px 0; }
-.daily-cash-total summary { cursor:pointer;font-weight:700;color:var(--brand); }
-.daily-cash-total p { margin:8px 0 0;font-size:1.4rem; }
-
-.daily-cash-head {
-  display:flex;
-  justify-content:space-between;
-  align-items:flex-start;
-  flex-wrap:wrap;
-  gap:10px;
+.daily-cash-layout {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,2fr);
+  gap:14px;
 }
-.daily-cash-head h2 { margin-bottom:4px; }
-.daily-cash-head .daily-cash-total { margin-top:0; }
-.daily-cash-total summary {
-  padding:8px 12px;
+.daily-cash-layout > .panel { padding:20px; border:1px solid var(--line); min-width:0; }
+.daily-cash-history h3,.daily-cash h3 { margin:0 0 10px; font-size:1.16rem; }
+.daily-cash-days { display:grid; gap:8px; }
+.daily-cash-days button {
+  display:grid;
+  gap:2px;
+  text-align:left;
+  background:var(--paper);
+  border:1px solid #dcc6d2;
   border-radius:8px;
-  background:var(--tint);
 }
-.daily-cash-cards { display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px; }
-.daily-cash-card { display:grid;gap:4px;padding:12px;border-radius:10px;background:var(--tint); }
-.daily-cash-card strong { font-size:1.2rem; }
-.daily-cash-card small,.daily-cash-history summary span { color:var(--muted); }
-.daily-cash-history { margin:20px 0 14px; }
-.daily-cash-history details { padding:10px 2px;border-top:1px solid var(--line); }
-.daily-cash-history summary { cursor:pointer; }
-.daily-cash-history summary span { margin-left:8px; }
+.daily-cash-days button[aria-pressed="true"] { background:var(--brand);color:white;border-color:var(--brand); }
+.daily-cash-head { display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px; }
+.daily-cash-head h2 { margin-bottom:6px;font-size:1.65rem; }
+.daily-cash-head p { margin:0 0 14px; }
+.daily-cash-total { text-align:right; }
+.daily-cash-total summary {
+  display:block;
+  padding:10px 12px;
+  border-radius:8px;
+  background:var(--brand);
+  color:white;
+  cursor:pointer;
+}
+.daily-cash-total:not([open]) summary span:last-child,
+.daily-cash-total[open] summary span:first-child { display:none; }
+.daily-cash-total p { margin:8px 0 0;font-size:1.4rem; }
+.daily-cash-cards { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.daily-cash-card { display:grid;gap:4px;padding:12px;border-radius:9px;background:var(--tint); }
+.daily-cash-card strong { font-size:1.18rem; }
+.daily-cash-card small { color:var(--muted); }
+.daily-cash-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:12px; }
+@media(max-width:760px) {
+  .daily-cash-layout { grid-template-columns:1fr; }
+  .daily-cash-layout > .panel { padding:14px; }
+}
 
 .sale-modes { display:flex;gap:8px;margin:0 0 10px;flex-shrink:0; }
 .sale-modes button { padding:.45em .8em; }
