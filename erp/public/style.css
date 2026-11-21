@@ -246,3 +246,7 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   border-radius:12px;
 }
 #sales-background-settings { margin-bottom:14px; }
+
+.daily-cash-total { margin:14px 0; }
+.daily-cash-total summary { cursor:pointer;font-weight:700;color:var(--brand); }
+.daily-cash-total p { margin:8px 0 0;font-size:1.4rem; }

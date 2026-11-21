@@ -1016,9 +1016,35 @@ function renderBackProducts(){
       p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':missingProductPrice(p)?'Sem preço':money(p.price),
       edit('products',p.id)+' '+frontProductButton(p)])):'<p>Nenhum produto encontrado.</p>';
 }
+const businessDay=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Bahia',dateStyle:'short'});
+function dailyReceipts(state,day){
+  const onDay=record=>{
+    const parsed=new Date(record.time);
+    return Number.isFinite(parsed.getTime())&&businessDay.format(parsed)===day;
+  };
+  const receipts=[...state.sales.filter(onDay)];
+  const seen=new Set(receipts.map(r=>r.id));
+  for(const shift of [state.cash,...state.shifts]){
+    for(const receipt of shift?.collections||[]){
+      if(!onDay(receipt)||seen.has(receipt.id))continue;
+      receipts.push(receipt);
+      seen.add(receipt.id);
+    }
+  }
+  const methods=[...splitMethods];
+  if(tenderTotal(receipts,'Cartão'))methods.push('Cartão sem identificação');
+  return methods.map(method=>[method,tenderTotal(receipts,method==='Cartão sem identificação'?'Cartão':method)]);
+}
+function dailyCashSummary(state){
+  const day=businessDay.format(new Date());
+  const methods=dailyReceipts(state,day);
+  const total=methods.reduce((sum,[,amount])=>sum+amount,0);
+  return '<h2>Caixa de hoje</h2><p>'+esc(day)+' · Caixa '+(state.cash?'aberto':'fechado')+'</p>'+
+    table(['Forma de recebimento','Recebido hoje'],methods.map(([method,amount])=>[esc(method),money(amount)]))+
+    '<details class="daily-cash-total"><summary>Mostrar total de hoje</summary><p><strong>'+money(total)+'</strong></p></details>';
+}
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Configurações','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
-  const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
   let content='';
   if(tab==='Configurações'){
     content='<h2>Layout do caixa</h2><p>Escolha o visual da tela de vendas neste navegador ou computador.</p>'+
@@ -1036,7 +1062,7 @@ function back(){
   }else if(tab==='Impressora'){content=printerPanel();}
   else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
-    content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
+    content=dailyCashSummary(data)+`<button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total','Comprovante'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total),
       s.partial?'':'<button data-reprint="'+esc(s.id)+'">Reimprimir</button>']))}
