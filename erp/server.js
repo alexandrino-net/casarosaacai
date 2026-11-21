@@ -507,7 +507,7 @@ const server = http.createServer(async (req, res) => {
       return reply(500, { error: 'Falha ao salvar os dados.' });
     }
   }
-  const asset = files[url] || (/^\/img\/(?:[0-9]|1[0-9]|2[0-6])\.jpg$/.test(url) && [url.slice(1), 'image/jpeg']);
+  const asset = files[url] || (/^\/img\/(?:[0-9]|[12][0-9]|3[0-8])\.jpg$/.test(url) && [url.slice(1), 'image/jpeg']);
   if (!asset) return reply(404, { error: 'Página indisponível.' });
   res.writeHead(200, { 'Content-Type': asset[1] + (asset[1].startsWith('text/') ? '; charset=utf-8' : '') });
   fs.createReadStream(path.join(__dirname, 'public', asset[0])).pipe(res);

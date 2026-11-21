@@ -239,7 +239,7 @@ function productPhoto(product){
   if(typeof image==='string' && image.length<=32768 && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(image))return image;
   return Number.isInteger(product.image)?'/img/'+product.image+'.jpg':'';
 }
-async function encodeProductPhoto(file){
+async function encodeProductPhoto(file,maxSize=32768,edgeSizes=[640,480,320,240]){
   if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>10*1024*1024)
     throw Error('Escolha uma imagem JPG, PNG ou WebP de até 10 MB.');
   let bitmap;
@@ -247,7 +247,7 @@ async function encodeProductPhoto(file){
   catch{throw Error('Não foi possível abrir a imagem escolhida.');}
   try{
     const canvas=document.createElement('canvas'), context=canvas.getContext('2d');
-    for(const edge of [640,480,320,240]){
+    for(const edge of edgeSizes){
       const scale=Math.min(1,edge/Math.max(bitmap.width,bitmap.height));
       canvas.width=Math.max(1,Math.round(bitmap.width*scale));
       canvas.height=Math.max(1,Math.round(bitmap.height*scale));
@@ -255,7 +255,7 @@ async function encodeProductPhoto(file){
       context.fillRect(0,0,canvas.width,canvas.height);
       context.drawImage(bitmap,0,0,canvas.width,canvas.height);
       const image=canvas.toDataURL('image/jpeg',0.76);
-      if(image.startsWith('data:image/jpeg;base64,')&&image.length<=32768)return image;
+      if(image.startsWith('data:image/jpeg;base64,')&&image.length<=maxSize)return image;
     }
     throw Error('A imagem não coube no cadastro. Escolha outra foto.');
   }finally{bitmap.close();}
@@ -491,6 +491,77 @@ function saveSalesLayout(event){
     notice('Layout salvo. Abra Vendas para ver a mudança.');
   }catch{notice('Não foi possível guardar o layout neste dispositivo.');}
 }
+const backgroundKey='casa-rosa:fundo-pdv';
+const builtInBackgrounds=[{"credit": "Karina m roque · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Por_do_Sol_Praia_das_Conchas_Itacar%C3%A9.jpeg", "name": "Praia das Conchas"}, {"credit": "Marinelson Almeida Silva · CC BY 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_de_Itacar%C3%A9zinho_-_Itacar%C3%A9_-_Bahia_-_Brasil_(8552602430).jpg", "name": "Praia de Itacarezinho"}, {"credit": "LíviaBuhring · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Itacar%C3%A9_Praia_Cidade.JPG", "name": "Orla de Itacaré"}, {"name": "Pôr do sol em Itacaré", "credit": "Renato Castanhari Jr · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Sunset_Itacare.jpg"}, {"name": "Praia de Itacaré", "credit": "ACALME · CC BY 4.0", "source": "https://commons.wikimedia.org/wiki/File:Foto_ITACAR%C3%89_2.jpg"}, {"name": "Engenhoca · vista da praia", "credit": "Vaolsu · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Engenhoca%2C_Itacar%C3%A9-BA.jpg"}, {"name": "Engenhoca · orla", "credit": "Marinelson Almeida · CC BY 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_de_Engenhoca_-_Itacar%C3%A9_-_Ba._%288552584858%29.jpg"}, {"name": "Tiririca · vista da praia", "credit": "MikutoH · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Tiririca%2C_Itacar%C3%A9%2C_Bahia.jpg"}, {"name": "Tiririca · orla", "credit": "Eduardo Loureiro · CC BY-SA 2.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Tiririca.jpg"}, {"name": "Prainha", "credit": "FlaviaC · CC BY 3.0", "source": "https://commons.wikimedia.org/wiki/File:Prainha.JPG"}, {"name": "Coroinha", "credit": "Teles · CC BY-SA 3.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_da_Coroinha_2.jpg"}, {"name": "Resende", "credit": "Matheus de Souza Silva · CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:Praia_do_Resende_em_Itacar%C3%A9%2C_Bahia.jpg"}].map((photo,index)=>({...photo,id:String(index+27),src:'/img/'+(index+27)+'.jpg'}));
+let backgroundIndex=0;
+function backgroundSettings(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(backgroundKey)||'{}');
+    const custom=Array.isArray(saved.custom)?saved.custom.filter(p=>p&&typeof p.name==='string'&&typeof p.id==='string'&&
+      typeof p.src==='string'&&p.src.length<=240000&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.src)):[];
+    return {mode:['rotate','fixed','off'].includes(saved.mode)?saved.mode:'rotate',fixed:saved.fixed,custom};
+  }catch{return {mode:'rotate',custom:[]};}
+}
+function paintSalesBackground(advance=false){
+  const panel=$('.pos');
+  if(!panel)return;
+  const settings=backgroundSettings();
+  const photos=[...builtInBackgrounds,...settings.custom];
+  panel.classList.toggle('sale-landscape',settings.mode!=='off');
+  if(settings.mode==='off'){panel.style.removeProperty('--sale-landscape');return;}
+  if(advance&&settings.mode==='rotate')backgroundIndex=(backgroundIndex+1)%photos.length;
+  const photo=settings.mode==='fixed'?(photos.find(p=>p.id===settings.fixed)||photos[0]):photos[backgroundIndex%photos.length];
+  panel.style.setProperty('--sale-landscape','url("'+photo.src+'")');
+}
+setInterval(()=>paintSalesBackground(true),180000);
+function backgroundPanel(){
+  const settings=backgroundSettings(), photos=[...builtInBackgrounds,...settings.custom];
+  return '<h2>Fundo da tela de vendas</h2><form id="sales-background-settings">'+
+    select('Exibição','mode',[['rotate','Rotativo · a cada 3 minutos'],['fixed','Imagem fixa'],['off','Sem imagem']],settings.mode)+
+    select('Foto para o modo fixo','fixed',photos.map(p=>[p.id,p.name]),settings.fixed||photos[0].id)+
+    '<label>Adicionar foto<input name="backgroundPhoto" type="file" accept="image/jpeg,image/png,image/webp"></label>'+
+    '<button class="primary">Salvar fundo</button><p id="sales-background-result" role="status"></p></form>'+
+    (settings.custom.length?'<h3>Fotos adicionadas</h3><ul>'+settings.custom.map(p=>'<li>'+esc(p.name)+' <button data-remove-background="'+esc(p.id)+'">Remover</button></li>').join('')+'</ul>':'')+
+    '<details><summary>Créditos das paisagens</summary><ul>'+builtInBackgrounds.map(p=>{
+      const license=p.credit.split(' · ').at(-1).toLowerCase();
+      const path=license.includes('by-sa')?'by-sa':'by';
+      const version=license.split(' ').at(-1);
+      return '<li><a href="'+esc(p.source)+'" target="_blank" rel="noopener">'+esc(p.name)+'</a> — '+esc(p.credit)+
+        ' · <a href="https://creativecommons.org/licenses/'+path+'/'+version+'/" target="_blank" rel="noopener">Licença</a> · foto redimensionada</li>';
+    }).join('')+'</ul></details>';
+}
+async function saveBackground(event){
+  event.preventDefault();
+  if(busy)return;
+  const values=new FormData(event.currentTarget), settings=backgroundSettings();
+  const mode=values.get('mode'), fixed=values.get('fixed'), file=values.get('backgroundPhoto');
+  const result=$('#sales-background-result');
+  if(!['rotate','fixed','off'].includes(mode))return;
+  busy=true;
+  try{
+    settings.mode=mode;
+    settings.fixed=fixed;
+    if(file?.size){
+      const src=await encodeProductPhoto(file,240000,[1280,1080,900,720]);
+      const id=crypto.randomUUID();
+      settings.custom.push({id,name:file.name.slice(0,100),src});
+      if(mode==='fixed')settings.fixed=id;
+    }
+    localStorage.setItem(backgroundKey,JSON.stringify(settings));
+    backgroundIndex=0;
+    render();
+    notice('Fundo salvo neste dispositivo.');
+  }catch(error){
+    result.textContent=error.name==='QuotaExceededError'?'Espaço de fotos cheio. Remova uma foto e tente novamente.':error.message;
+  }finally{busy=false;}
+}
+function removeBackground(id){
+  const settings=backgroundSettings();
+  settings.custom=settings.custom.filter(p=>p.id!==id);
+  if(settings.fixed===id)settings.fixed=builtInBackgrounds[0].id;
+  try{localStorage.setItem(backgroundKey,JSON.stringify(settings));render();}
+  catch{notice('Não foi possível remover a foto neste dispositivo.');}
+}
 function sales(){
   const layout=salesLayout();
   const categories=frontCategories().filter(c=>!c.hidden);
@@ -528,6 +599,7 @@ function sales(){
   $('#search').oninput=e=>{search=e.target.value.replace(/[^0-9*,.]/g,'');e.target.value=search;updateCatalog();};
   bindNameSearch();
   updateCatalog();
+  paintSalesBackground();
 }
 const splitMethods=['Pix','Cartão de crédito','Cartão de débito','Dinheiro','Ticket alimentação'];
 const methods=[...splitMethods,'A prazo'];
@@ -951,7 +1023,7 @@ function back(){
   if(tab==='Configurações'){
     content='<h2>Layout do caixa</h2><p>Escolha o visual da tela de vendas neste navegador ou computador.</p>'+
       '<form id="sales-layout-settings">'+select('Layout da tela de vendas','layout',salesLayouts,salesLayout())+
-      '<button class="primary">Salvar layout</button></form>';
+      '<button class="primary">Salvar layout</button></form>'+backgroundPanel();
   }else if(tab==='Restaurar base do PC'){
     content='<h2>Restaurar base do PC</h2><p>Esta ação substitui os dados operacionais online pelo arquivo do PC. O ERP guarda a base anterior e mantém os usuários e acessos.</p>'+
       '<form id="restore-pc"><label>Base oficial do PC<input name="base" type="file" accept=".json,application/json" required></label>'+
@@ -999,7 +1071,10 @@ function back(){
     $('#back-product-unpriced').onchange=e=>{productsWithoutPrice=e.target.checked;renderBackProducts();};
     renderBackProducts();
   }
-  if(tab==='Configurações')$('#sales-layout-settings').onsubmit=saveSalesLayout;
+  if(tab==='Configurações'){
+    $('#sales-layout-settings').onsubmit=saveSalesLayout;
+    $('#sales-background-settings').onsubmit=saveBackground;
+  }
   if(tab==='Impressora')$('#printer-settings').onsubmit=savePrinterSettings;
   if(tab==='Restaurar base do PC')$('#restore-pc').onsubmit=restorePcBase;
   if(tab==='Atualizações')void localUpdateStatus();
@@ -1261,6 +1336,7 @@ document.addEventListener('click',e=>{
   if(d.edit)record(d.edit,d.id,d.categoryBill);
   if(d.settle)settleBill(d.settle);
   if(d.sendPending!==undefined){void sendLocalPending();return;}
+  if(d.removeBackground!==undefined){removeBackground(d.removeBackground);return;}
   if(d.receiveUpdate!==undefined){void receiveLocalUpdate();return;}
   if(d.printTest!==undefined){testPrint();return;}
   if(d.reprint!==undefined){reprintReceipt(d.reprint,d.reprintTable!==undefined);return;}
