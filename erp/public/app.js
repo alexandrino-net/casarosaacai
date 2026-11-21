@@ -1196,7 +1196,9 @@ function dailyCashSummary(state){
     '<section class="daily-cash panel"><div class="daily-cash-head"><div><h2>'+
     (isToday?'Caixa de hoje':'Caixa de '+esc(displayCashDate(selected)))+'</h2><p>'+esc(displayCashDate(selected))+' · '+
     (isToday?'Caixa '+dayStatus(selected,days.get(selected)).toLocaleLowerCase('pt-BR'):dayStatus(selected,days.get(selected)))+'</p></div>'+
-    (isToday?'<details class="daily-cash-total"><summary><span>Mostrar total de hoje</span><span>Ocultar total de hoje</span></summary><p><strong>'+money(total)+'</strong></p></details>':'')+'</div>'+
+    (isToday?'<div class="daily-cash-total">'+
+      (canView('sales')?'<button type="button" class="primary" data-cash>'+(state.cash?'Fechar caixa':'Abrir caixa')+'</button>':'')+
+      '<p>Total de hoje<br><strong>'+money(total)+'</strong></p></div>':'')+'</div>'+
     '<h3>Recebimentos por forma de pagamento</h3><div class="daily-cash-cards">'+cards+'</div></section></div>';
 }
 function back(){
@@ -1218,7 +1220,7 @@ function back(){
   }else if(tab==='Impressora'){content=printerPanel();}
   else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
-    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button></div>`;
+    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button data-backup>Exportar dados</button></div>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total','Comprovante'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total),
       s.partial?'':'<button data-reprint="'+esc(s.id)+'">Reimprimir</button>']))}
