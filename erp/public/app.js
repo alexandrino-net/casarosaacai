@@ -62,7 +62,49 @@ function sameTable(next, expected) {
 function checkShift(next, shift) {
   if (!shift || next.cash?.id !== shift.id) throw review('O turno do caixa mudou. Confira antes de receber.');
 }
-function showReceipt(sale) {
+const printerFormats=[['58','Bobina 58 mm'],['80','Bobina 80 mm'],['a4','Folha A4']];
+const printerKey='casa-rosa:impressora';
+function printerSettings(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(printerKey)||'{}');
+    return {paper:printerFormats.some(([id])=>id===saved?.paper)?saved.paper:'80',automatic:saved?.automatic===true};
+  }catch{return {paper:'80',automatic:false};}
+}
+function printerPanel(){
+  const {paper,automatic}=printerSettings();
+  return '<h2>Impressora</h2><p>Preferências deste dispositivo. Selecione a impressora e o tamanho do papel na janela de impressão.</p>'+
+    '<form id="printer-settings">'+select('Formato do comprovante','paper',printerFormats,paper)+
+    select('Ao finalizar a venda','automatic',[['no','Mostrar comprovante'],['yes','Abrir janela de impressão']],automatic?'yes':'no')+
+    '<div class="actions"><button type="button" data-print-test>Testar impressão</button><button class="primary">Salvar preferências</button></div></form>'+
+    '<p>Para reimprimir uma venda ou o fechamento de uma mesa, use Retaguarda → Histórico.</p>';
+}
+function savePrinterSettings(event){
+  event.preventDefault();
+  const values=new FormData(event.currentTarget);
+  try{
+    localStorage.setItem(printerKey,JSON.stringify({paper:values.get('paper'),automatic:values.get('automatic')==='yes'}));
+    notice('Preferências de impressão salvas.');
+  }catch{notice('Não foi possível salvar as preferências neste dispositivo.');}
+}
+function testPrint(){
+  const paper=$('#printer-settings [name=paper]').value;
+  showReceipt({id:'teste',time:date(),items:[{name:'Item de teste',qty:1,price:1234,total:1234}],payments:[],total:1234,test:true},paper);
+}
+function reprintReceipt(id,table){
+  if(!canView('back'))return;
+  if(table){
+    const closed=(data.closedTables||[]).find(t=>t.receiptId===id);
+    if(closed)showReceipt({...tableReceipt(closed),reprint:true});
+    return;
+  }
+  const sale=data.sales.find(s=>s.id===id && !s.partial);
+  if(sale)showReceipt({...sale,reprint:true});
+}
+function tableReceipt(closed){
+  return {id:closed.receiptId,time:closed.closed,table:closed.id,customer:closed.name,items:closed.items,
+    payments:closed.payments,fee:serviceCharge(closed.items,closed.service),total:tableTotal(closed)};
+}
+function showReceipt(sale,paperFormat=printerSettings().paper) {
   const row = (label, value) => '<div class="receipt-row"><span>'+esc(label)+'</span><b>'+esc(value)+'</b></div>';
   const payments = sale.payments || [{method:sale.method, amount:sale.total}];
   const venue = sale.table ? 'Mesa '+sale.table : 'Balcão';
@@ -70,7 +112,7 @@ function showReceipt(sale) {
     row(qtyLabel(item)+' × '+money(item.price)+(item.unit==='kg'?' / kg':''),money(item.total))+'</li>').join('');
   const paper = '<article class="receipt-paper"><div class="receipt-brand"><img src="/img/6.jpg" alt="">'+
     '<h2 id="receipt-title">Casa Rosa Açaí</h2><p>CNPJ 60.403.009/0001-75<br>Rua Lodonio Almeida, 139 · Centro<br>Itacaré – BA</p></div>'+
-    '<h3>'+(sale.mirror?'Espelho da comanda':'Comprovante de venda')+'</h3>'+row('Nº',sale.id.slice(0,8).toUpperCase())+
+    '<h3>'+(sale.test?'Teste de impressão':sale.mirror?'Espelho da comanda':sale.reprint?'Comprovante de venda · 2ª via':'Comprovante de venda')+'</h3>'+row('Nº',sale.id.slice(0,8).toUpperCase())+
     row('Data',new Date(sale.time).toLocaleString('pt-BR',{timeZone:'America/Bahia'}))+
     row('Atendimento',venue)+(sale.customer?row('Cliente / identificação',sale.customer):'')+
     '<ul>'+items+'</ul>'+(sale.fee?row('Subtotal',money(sale.total-sale.fee))+row('Serviço (10%)',money(sale.fee)):'')+'<div class="receipt-total">'+row('TOTAL',money(sale.total))+'</div>'+
@@ -78,9 +120,10 @@ function showReceipt(sale) {
     (sale.mirror?row('Saldo a pagar',money(sale.balance))+row('Pessoas',sale.people)+row('Total por pessoa',splitLabel(sale.balance,sale.people)):'')+
     (sale.given!=null?row('Recebido',money(sale.given))+row('Troco',money(sale.given-sale.total)):'')+
     (sale.due?row('Vencimento',sale.due.split('-').reverse().join('/')):'')+
-    '<footer>'+(sale.mirror?'Conferência da conta':'Obrigada pela visita!')+'<br><small>Documento não fiscal</small></footer></article>';
+    '<footer>'+(sale.test?'Apenas teste de impressão':sale.mirror?'Conferência da conta':'Obrigada pela visita!')+'<br><small>Documento não fiscal</small></footer></article>';
   const receipt = document.createElement('dialog');
   receipt.className='receipt-dialog';
+  receipt.dataset.paper=paperFormat;
   receipt.setAttribute('aria-labelledby','receipt-title');
   receipt.innerHTML=paper+'<div class="receipt-actions"><button type="button">Fechar</button><button type="button" class="primary">Imprimir cupom</button></div>';
   document.body.append(receipt);
@@ -89,6 +132,9 @@ function showReceipt(sale) {
   receipt.querySelector('.primary').onclick=()=>window.print();
   receipt.addEventListener('close',()=>receipt.remove(),{once:true});
   receipt.showModal();
+  if(!sale.mirror && !sale.test && !sale.reprint && printerSettings().automatic){
+    requestAnimationFrame(()=>{if(receipt.open)window.print();});
+  }
 }
 
 function fields(title, html, action, submit='Salvar', cancel='Voltar', afterSubmit) {
@@ -342,7 +388,7 @@ function closeTable() {
     },true);
     const closed=data.closedTables.find(t=>t.receiptId===operationId);
     selectedTable=null;view='tables';
-    return {receipt:{id:closed.receiptId,time:closed.closed,table:closed.id,customer:closed.name,items:closed.items,payments:closed.payments,fee:serviceCharge(closed.items,closed.service),total:tableTotal(closed)}};
+    return {receipt:tableReceipt(closed)};
   },'Encerrar mesa');
 }
 function cancelTable(){
@@ -788,15 +834,53 @@ function createCategory(){
     });
   });
 }
+const localStation=location.origin==='http://127.0.0.1:37411';
+async function localUpdateStatus(){
+  const status=$('#local-sync-status'), version=$('#local-interface-version');
+  if(!status||!version)return;
+  try{
+    const response=await fetch('/__sync',{cache:'no-store'});
+    if(!response.ok)throw Error();
+    const details=await response.json();
+    status.textContent=details.message+' · '+details.pending+' pendência(s)';
+    version.textContent=details.interfaceVersion||'Instalação local';
+  }catch{status.textContent='Não foi possível consultar o sincronizador.';}
+}
+async function receiveLocalUpdate(){
+  if(busy||order().length){notice('Conclua ou salve o pedido antes de atualizar.');return;}
+  const button=$('[data-receive-update]');
+  const result=$('#local-update-result');
+  busy=true;
+  button.disabled=true;
+  result.textContent='Buscando a interface publicada…';
+  try{
+    const response=await fetch('/__update-interface',{method:'POST'});
+    const update=await response.json();
+    if(!response.ok)throw Error(update.error||'Não foi possível atualizar.');
+    if(update.changed){location.reload();return;}
+    result.textContent='A interface já está atualizada.';
+  }catch(error){result.textContent=error.message;}
+  finally{busy=false;button.disabled=false;}
+}
+if(localStation)setInterval(localUpdateStatus,5000);
 function back(){
-  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico',...(session?.admin?staffTabs:[])];
+  const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Impressora',...(localStation?['Atualizações']:[]),...(session?.admin?staffTabs:[])];
   const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
   let content='';
-  if(staffTabs.includes(tab)){content=staffPanel();}
+  if(tab==='Atualizações'){
+    content='<h2>Atualizações deste PC</h2><p>Versão da interface: <strong id="local-interface-version">Consultando…</strong></p>'+
+      '<p id="local-sync-status" role="status">Consultando a sincronização…</p>'+
+      '<button class="primary" data-receive-update>Receber atualizações</button><p id="local-update-result" role="status"></p>';
+  }else if(tab==='Impressora'){content=printerPanel();}
+  else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
     content='<p><strong>'+esc(data.company?.name||'Casa Rosa Açaí')+'</strong><br>'+esc(data.company?.legalName||'')+'<br>CNPJ '+esc(data.company?.cnpj||'')+'<br>'+esc(data.company?.address||'')+'</p>'+`<div class="stats">${[['Contas a pagar',money(totals('pagar'))],['Contas a receber',money(totals('receber'))],['Vendas registradas',money(sum(data.sales,'total'))],['Caixa',data.cash?'Aberto':'Fechado']].map(([label,value])=>`<div class="stat">${label}<strong>${value}</strong></div>`).join('')}</div><button class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button> <button data-backup>Exportar dados</button>`;
   } else if(tab==='Histórico'){
-    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total)]))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.operator||r.initial)]))}<h2>Comandas canceladas</h2>${table(['Data','Mesa','Cliente','Total','Recebido','Saldo cancelado','Pedido descartado','Responsável'],[...(data.tableCancellations||[])].reverse().map(r=>[stamp(r.time),esc(r.table),esc(r.customer),money(r.total),money(r.paid),money(r.balance),money(r.draftTotal||0),esc(r.operator)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
+    content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total','Comprovante'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total),
+      s.partial?'':'<button data-reprint="'+esc(s.id)+'">Reimprimir</button>']))}
+      <h2>Mesas fechadas</h2>${table(['Data','Mesa','Cliente','Total','Comprovante'],
+        (data.closedTables||[]).filter(t=>t.receiptId).slice().reverse().map(t=>[stamp(t.closed),esc(t.id),esc(t.name),money(tableTotal(t)),
+          '<button data-reprint="'+esc(t.receiptId)+'" data-reprint-table>Reimprimir</button>']))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.operator||r.initial)]))}<h2>Comandas canceladas</h2>${table(['Data','Mesa','Cliente','Total','Recebido','Saldo cancelado','Pedido descartado','Responsável'],[...(data.tableCancellations||[])].reverse().map(r=>[stamp(r.time),esc(r.table),esc(r.customer),money(r.total),money(r.paid),money(r.balance),money(r.draftTotal||0),esc(r.operator)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
   } else {
     const billCategory = ['fixos','impostos'].includes(tab) ? tab : null;
     const billKind = billCategory ? 'pagar' : tab;
@@ -817,6 +901,8 @@ function back(){
     }
   }
   app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="panel">${content}</div></section>`;
+  if(tab==='Impressora')$('#printer-settings').onsubmit=savePrinterSettings;
+  if(tab==='Atualizações')void localUpdateStatus();
 }
 function record(key,id,billCategory){
   const isBill=['pagar','receber'].includes(key);
@@ -1074,6 +1160,9 @@ document.addEventListener('click',e=>{
   if(d.frontProduct!==undefined)editFrontProduct(d.frontProduct);
   if(d.edit)record(d.edit,d.id,d.categoryBill);
   if(d.settle)settleBill(d.settle);
+  if(d.receiveUpdate!==undefined){void receiveLocalUpdate();return;}
+  if(d.printTest!==undefined){testPrint();return;}
+  if(d.reprint!==undefined){reprintReceipt(d.reprint,d.reprintTable!==undefined);return;}
   if(d.backup!==undefined){
     const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download='casa-rosa-dados.json';link.click();
