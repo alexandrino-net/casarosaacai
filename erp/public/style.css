@@ -139,3 +139,14 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 @media(min-width:761px){
   body:has(.pos):has(> p[role="status"]) #app {height:calc(100dvh - 91px)}
 }
+
+.sale-search { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; flex-shrink:0; }
+.sale-search label { display:grid; gap:4px; font-size:.875rem; font-weight:650; }
+.sale-search input { width:100%; font-size:16px; padding:.55em .75em; font-weight:400; }
+.sale-name-search { position:relative; min-width:0; }
+#product-matches { position:absolute; top:100%; inset-inline:0; z-index:2; max-height:min(34vh,250px); overflow:auto; list-style:none; margin:4px 0 0; padding:4px; border:1px solid #dec2d0; border-radius:10px; background:white; box-shadow:0 6px 22px #3b102d29; }
+#product-matches li { padding:8px; border-radius:6px; cursor:pointer; }
+#product-matches li[aria-selected="true"], #product-matches li:hover { background:#f3dce9; }
+#product-matches small { display:block; }
+.sale-search-help { display:flex; align-items:center; gap:8px; margin-top:6px; flex-shrink:0; }
+.sale-search-help button { padding:.25em .65em; font-size:.875rem; }

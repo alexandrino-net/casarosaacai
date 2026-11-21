@@ -91,7 +91,7 @@ function showReceipt(sale) {
   receipt.showModal();
 }
 
-function fields(title, html, action, submit='Salvar', cancel='Voltar') {
+function fields(title, html, action, submit='Salvar', cancel='Voltar', afterSubmit) {
   if(busy) return;
   operationId=crypto.randomUUID();
   dialog.innerHTML=`<form><h2>${title}</h2>${html}<p role="alert" class="form-error" hidden></p><div class="actions"><button type="button" id="cancel">${cancel}</button><button class="primary">${submit}</button></div></form>`;
@@ -107,6 +107,7 @@ function fields(title, html, action, submit='Salvar', cancel='Voltar') {
       const result = await action(values);
       dialog.close();
       render();
+      afterSubmit?.();
       if (result?.receipt) showReceipt(result.receipt);
     } catch(error){if(error.review){dialog.close();render();notice(error.message);}else{const alert=dialog.querySelector('.form-error');alert.hidden=false;alert.textContent=error.message;}}
     finally {busy=false;buttons.forEach(b=>b.disabled=false);}
@@ -121,7 +122,7 @@ const customItems=new Map();
 const lineTotal=(price,qty)=>Math.round(price*Math.round(qty*1000)/1000);
 const qtyLabel=item=>item.unit==='kg'?item.qty.toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})+' kg':String(item.qty);
 const order=()=>[...data.products,...customItems.values()].filter(p=>cart[p.id]>0).map(p=>({...p,qty:cart[p.id],total:lineTotal(p.price,cart[p.id])}));
-function addProduct(id,quantity){
+function addProduct(id,quantity,focus='#search'){
   const product=customItems.get(id)||data.products.find(p=>p.id===id);
   if(!product)return;
   if(!product.variable)customItems.forEach((item,key)=>{if(!cart[key])customItems.delete(key);});
@@ -137,15 +138,15 @@ function addProduct(id,quantity){
       const item={...product,id:'diversos:'+price,productId:product.id,price,variable:false};
       customItems.set(item.id,item);
       add(item,quantity||1);
-    },'Adicionar');
+    },'Adicionar','Voltar',()=>$(focus)?.focus());
   }else if(product.unit==='kg' && quantity===undefined){
     fields(esc(product.name),input('Peso em kg','weight','','number','required min="0.001" max="999" step="0.001"'),async v=>{
       const weight=Number(v.weight);
       if(!Number.isFinite(weight)||weight<=0)throw Error('Informe o peso.');
       add(product,weight);
-    },'Adicionar');
+    },'Adicionar','Voltar',()=>$(focus)?.focus());
   }else{
-    add(product,quantity||1);render();$('#search')?.focus();
+    add(product,quantity||1);render();$(focus)?.focus();
   }
 }
 function entry(raw){
@@ -312,11 +313,67 @@ function cancelTable(){
       notice('Comanda cancelada. A mesa está livre.');
     },'Sim','Não');
 }
+function bindNameSearch(){
+  const field=$('#product-name'), list=$('#product-matches');
+  const normalize=value=>value.normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('pt-BR').trim();
+  const alphabet=new Intl.Collator('pt-BR',{numeric:true,sensitivity:'base'});
+  let matches=[], selected=0;
+  function showSelection(){
+    [...list.children].forEach((row,index)=>row.setAttribute('aria-selected',String(index===selected)));
+    field.setAttribute('aria-activedescendant','product-match-'+selected);
+  }
+  function clear(){
+    matches=[];
+    list.hidden=true;
+    list.replaceChildren();
+    field.setAttribute('aria-expanded','false');
+    field.removeAttribute('aria-activedescendant');
+  }
+  function searchName(){
+    clear();
+    const query=normalize(field.value);
+    if(!query)return;
+    matches=data.products.filter(p=>normalize(p.name).includes(query))
+      .sort((a,b)=>alphabet.compare(a.name,b.name));
+    selected=0;
+    list.hidden=false;
+    field.setAttribute('aria-expanded','true');
+    list.innerHTML=matches.map((p,index)=>`<li role="option" id="product-match-${index}" data-match="${index}"><strong>${esc(p.name)}</strong><small>${esc(p.code||'')} ${p.variable?'· Preço na venda':'· '+money(p.price)+(p.unit==='kg'?' / kg':'')}</small></li>`).join('')
+      || '<li role="option" aria-disabled="true">Nenhum produto encontrado.</li>';
+    if(matches.length)showSelection();
+  }
+  const focusCode=()=>{clear();$('#search').focus();};
+  function choose(index){
+    const product=matches[index];
+    if(!product || busy)return;
+    field.value='';
+    clear();
+    addProduct(product.id,undefined,'#product-name');
+  }
+  field.oninput=field.onfocus=searchName;
+  field.onblur=clear;
+  field.onkeydown=event=>{
+    if(event.isComposing)return;
+    if(event.key==='Escape'){event.preventDefault();focusCode();return;}
+    if(event.key==='Enter'){event.preventDefault();if(!event.repeat)choose(selected);return;}
+    if(!matches.length || !['ArrowUp','ArrowDown'].includes(event.key))return;
+    event.preventDefault();
+    selected=(selected+(event.key==='ArrowDown'?1:-1)+matches.length)%matches.length;
+    showSelection();
+    list.children[selected].scrollIntoView({block:'nearest'});
+  };
+  list.onmousedown=event=>event.preventDefault();
+  list.onclick=event=>{
+    const row=event.target.closest('[data-match]');
+    if(row)choose(Number(row.dataset.match));
+  };
+  $('#focus-code').onclick=focusCode;
+}
 function sales(){
   const categories=frontCategories().filter(c=>!c.hidden);
   if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  app.innerHTML=`<div class="pos"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
   <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line"><div class="split"><strong>${esc(p.name)}</strong><span>${money(p.total)}</span></div><div class="qty"><button data-minus="${p.id}" aria-label="Remover uma unidade">−</button><b>${qtyLabel(p)}</b><button data-add="${p.id}" aria-label="Adicionar uma unidade">+</button></div></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
@@ -346,6 +403,7 @@ function sales(){
     e.preventDefault();entry(e.target.value);
   };
   $('#search').oninput=e=>{search=e.target.value.replace(/[^0-9*,.]/g,'');e.target.value=search;updateCatalog();};
+  bindNameSearch();
   updateCatalog();
 }
 const splitMethods=['Pix','Cartão de crédito','Cartão de débito','Dinheiro','Ticket alimentação'];
@@ -537,7 +595,7 @@ document.addEventListener('keydown',e=>{
   if(!canView('sales'))return;
   const menuOpen=dialog.open && dialog.querySelector('#function-title');
   const shortcut=letterFunctions[e.key.toLowerCase()];
-  if(shortcut && (view==='sales' || menuOpen) && (!document.querySelector('dialog[open]')||menuOpen)){
+  if(shortcut && e.target.id!=='product-name' && (view==='sales' || menuOpen) && (!document.querySelector('dialog[open]')||menuOpen)){
     e.preventDefault();if(menuOpen)dialog.close();shortcut.run();return;
   }
   if(e.altKey || e.shiftKey || (document.querySelector('dialog[open]') && !menuOpen))return;
