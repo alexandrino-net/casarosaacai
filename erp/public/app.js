@@ -906,6 +906,22 @@ async function restorePcBase(event){
   }catch(error){result.textContent=error.message;}
   finally{busy=false;button.disabled=false;}
 }
+let productQuery='', productsWithoutPrice=false;
+const normalizeProductQuery=value=>String(value??'').normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('pt-BR').trim();
+const missingProductPrice=p=>!p.variable && (!Number.isFinite(p.price)||p.price<=0);
+function backProductMatches(product,query,withoutPrice){
+  return (!withoutPrice||missingProductPrice(product)) &&
+    [product.name,product.code,product.barcode].some(value=>normalizeProductQuery(value).includes(query));
+}
+function renderBackProducts(){
+  const query=normalizeProductQuery(productQuery);
+  const products=data.products.filter(p=>backProductMatches(p,query,productsWithoutPrice));
+  $('#back-product-count').textContent=products.length+' de '+data.products.length+' produto(s)';
+  $('#back-product-list').innerHTML=products.length?table(['Produto','Categoria','Unidade','Estoque','Preço',''],
+    products.map(p=>[esc(p.name),esc(p.category)+(p.subcategory?' / '+esc(p.subcategory):''),p.unit==='kg'?'KG':'UN',
+      p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':missingProductPrice(p)?'Sem preço':money(p.price),
+      edit('products',p.id)+' '+frontProductButton(p)])):'<p>Nenhum produto encontrado.</p>';
+}
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
   const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
@@ -940,7 +956,10 @@ function back(){
           esc(c.name),subcategories(c.name).map(esc).join(', ')||'—',c.hidden?'Oculta':'Visível',c.position,
           '<button data-front-category="'+esc(c.name)+'">Configurar no caixa</button>'
         ]));
-      content+=table(['Produto','Categoria','Unidade','Estoque','Preço',''],data.products.map(p=>[esc(p.name),esc(p.category)+(p.subcategory?' / '+esc(p.subcategory):''),p.unit==='kg'?'KG':'UN',p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':money(p.price),edit(tab,p.id)+' '+frontProductButton(p)]));
+      content+='<p><label for="back-product-query">Localizar produto</label> '+
+        '<input id="back-product-query" type="search" placeholder="Nome ou código" value="'+esc(productQuery)+'"> '+
+        '<label><input id="back-product-unpriced" type="checkbox" '+(productsWithoutPrice?'checked':'')+'> Somente sem preço</label></p>'+
+        '<p id="back-product-count" role="status"></p><div id="back-product-list"></div>';
     } else if(data[tab]){
       content+=table(['Nome','Documento','Contato','Limite','Em aberto',''],data[tab].map(p=>[esc(p.name),esc(p.doc),esc(p.contact),money(p.limit),money(data.bills.filter(b=>!b.paid&&b.party===p.id).reduce((n,b)=>n+creditRules.remaining(b),0)),edit(tab,p.id)]));
     } else {
@@ -949,6 +968,11 @@ function back(){
     }
   }
   app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="panel">${content}</div></section>`;
+  if(tab==='products'){
+    $('#back-product-query').oninput=e=>{productQuery=e.target.value;renderBackProducts();};
+    $('#back-product-unpriced').onchange=e=>{productsWithoutPrice=e.target.checked;renderBackProducts();};
+    renderBackProducts();
+  }
   if(tab==='Impressora')$('#printer-settings').onsubmit=savePrinterSettings;
   if(tab==='Restaurar base do PC')$('#restore-pc').onsubmit=restorePcBase;
   if(tab==='Atualizações')void localUpdateStatus();
