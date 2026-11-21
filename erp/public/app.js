@@ -863,6 +863,21 @@ async function receiveLocalUpdate(){
   finally{busy=false;button.disabled=false;}
 }
 if(localStation)setInterval(localUpdateStatus,5000);
+async function sendLocalPending(){
+  if(busy)return;
+  const button=$('[data-send-pending]'), result=$('#local-update-result');
+  busy=true;
+  button.disabled=true;
+  result.textContent='Conferindo e enviando pendências…';
+  try{
+    const response=await fetch('/__send-pending',{method:'POST'});
+    if(response.status===404)throw Error('Instale o pacote local 2026.11.21.5 ou superior para habilitar este botão.');
+    const status=await response.json();
+    if(!response.ok)throw Error(status.error||'Não foi possível enviar.');
+    result.textContent=status.pending?status.message+' · '+status.pending+' pendência(s) preservada(s).':'Fila conferida · 0 pendências.';
+  }catch(error){result.textContent=error.message;}
+  finally{busy=false;button.disabled=false;void localUpdateStatus();}
+}
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Impressora',...(localStation?['Atualizações']:[]),...(session?.admin?staffTabs:[])];
   const totals=k=>data.bills.filter(b=>b.kind===k&&!b.paid).reduce((n,b)=>n+creditRules.remaining(b),0);
@@ -870,7 +885,7 @@ function back(){
   if(tab==='Atualizações'){
     content='<h2>Atualizações deste PC</h2><p>Versão da interface: <strong id="local-interface-version">Consultando…</strong></p>'+
       '<p id="local-sync-status" role="status">Consultando a sincronização…</p>'+
-      '<button class="primary" data-receive-update>Receber atualizações</button><p id="local-update-result" role="status"></p>';
+      '<button class="primary" data-receive-update>Receber atualizações</button> <button data-send-pending>Enviar pendências</button><p id="local-update-result" role="status"></p>';
   }else if(tab==='Impressora'){content=printerPanel();}
   else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
@@ -1160,6 +1175,7 @@ document.addEventListener('click',e=>{
   if(d.frontProduct!==undefined)editFrontProduct(d.frontProduct);
   if(d.edit)record(d.edit,d.id,d.categoryBill);
   if(d.settle)settleBill(d.settle);
+  if(d.sendPending!==undefined){void sendLocalPending();return;}
   if(d.receiveUpdate!==undefined){void receiveLocalUpdate();return;}
   if(d.printTest!==undefined){testPrint();return;}
   if(d.reprint!==undefined){reprintReceipt(d.reprint,d.reprintTable!==undefined);return;}
