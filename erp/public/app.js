@@ -1016,32 +1016,76 @@ function renderBackProducts(){
       p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':missingProductPrice(p)?'Sem preço':money(p.price),
       edit('products',p.id)+' '+frontProductButton(p)])):'<p>Nenhum produto encontrado.</p>';
 }
-const businessDay=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Bahia',dateStyle:'short'});
-function dailyReceipts(state,day){
-  const onDay=record=>{
-    const parsed=new Date(record.time);
-    return Number.isFinite(parsed.getTime())&&businessDay.format(parsed)===day;
+const businessDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Bahia',year:'numeric',month:'2-digit',day:'2-digit'});
+const receiptDate=value=>{
+  if(!value)return '';
+  const time=new Date(value);
+  return Number.isFinite(time.getTime())?businessDay.format(time):'';
+};
+const displayCashDate=day=>day.split('-').reverse().join('/');
+function cashDays(state,today){
+  const days=new Map();
+  const ensure=day=>{
+    if(!days.has(day))days.set(day,{payments:new Map(),count:0,closed:0});
+    return days.get(day);
   };
-  const receipts=[...state.sales.filter(onDay)];
-  const seen=new Set(receipts.map(r=>r.id));
+  ensure(today);
+  if(state.cash?.opened){
+    const opened=receiptDate(state.cash.opened);
+    if(opened)ensure(opened);
+  }
+  const receipts=[...state.sales];
+  const seen=new Set(receipts.map(r=>r.id).filter(Boolean));
   for(const shift of [state.cash,...state.shifts]){
+    const closed=receiptDate(shift?.closed);
+    if(closed)ensure(closed).closed++;
     for(const receipt of shift?.collections||[]){
-      if(!onDay(receipt)||seen.has(receipt.id))continue;
+      if(receipt.id&&seen.has(receipt.id))continue;
       receipts.push(receipt);
-      seen.add(receipt.id);
+      if(receipt.id)seen.add(receipt.id);
     }
   }
-  const methods=[...splitMethods];
-  if(tenderTotal(receipts,'Cartão'))methods.push('Cartão sem identificação');
-  return methods.map(method=>[method,tenderTotal(receipts,method==='Cartão sem identificação'?'Cartão':method)]);
+  for(const receipt of receipts){
+    const day=receiptDate(receipt.time);
+    if(!day)continue;
+    const parts=new Map();
+    for(const part of receipt.payments||[{method:receipt.method,amount:receipt.total}]){
+      if((!splitMethods.includes(part.method)&&part.method!=='Cartão')||!Number.isSafeInteger(part.amount)||part.amount<=0)continue;
+      parts.set(part.method,(parts.get(part.method)||0)+part.amount);
+    }
+    if(!parts.size)continue;
+    const entry=ensure(day);
+    entry.count++;
+    for(const [method,amount] of parts){
+      const previous=entry.payments.get(method)||{amount:0,count:0};
+      entry.payments.set(method,{amount:previous.amount+amount,count:previous.count+1});
+    }
+  }
+  return days;
+}
+function cashMethods(entry){
+  return [...splitMethods,...(entry.payments.has('Cartão')?['Cartão']:[])].map(method=>{
+    const values=entry.payments.get(method)||{amount:0,count:0};
+    return [method==='Cartão'?'Cartão sem identificação':method,values.amount,values.count];
+  });
 }
 function dailyCashSummary(state){
-  const day=businessDay.format(new Date());
-  const methods=dailyReceipts(state,day);
+  const today=receiptDate(new Date());
+  const days=cashDays(state,today), current=days.get(today);
+  const methods=cashMethods(current);
   const total=methods.reduce((sum,[,amount])=>sum+amount,0);
-  return '<h2>Caixa de hoje</h2><p>'+esc(day)+' · Caixa '+(state.cash?'aberto':'fechado')+'</p>'+
-    table(['Forma de recebimento','Recebido hoje'],methods.map(([method,amount])=>[esc(method),money(amount)]))+
-    '<details class="daily-cash-total"><summary>Mostrar total de hoje</summary><p><strong>'+money(total)+'</strong></p></details>';
+  const cards=methods.map(([method,amount,count])=>
+    '<article class="daily-cash-card"><span>'+esc(method)+'</span><strong>'+money(amount)+'</strong><small>'+count+' recebimento(s)</small></article>').join('');
+  const history=[...days].sort(([a],[b])=>b.localeCompare(a)).map(([day,entry])=>
+    '<details><summary><strong>'+esc(displayCashDate(day))+(day===today?' · Hoje':'')+'</strong> <span>'+
+      entry.count+' recebimento(s) · '+entry.closed+' fechamento(s)</span></summary>'+
+      table(['Forma de recebimento','Valor','Recebimentos'],cashMethods(entry).map(([method,amount,count])=>[esc(method),money(amount),count]))+
+    '</details>').join('');
+  return '<section class="daily-cash"><div class="daily-cash-head"><div><h2>Caixa de hoje</h2><p>'+
+    esc(displayCashDate(today))+' · Caixa '+(state.cash?'aberto':'fechado')+'</p></div>'+
+    '<details class="daily-cash-total"><summary>Mostrar total de hoje</summary><p><strong>'+money(total)+'</strong></p></details></div>'+
+    '<h3>Recebimentos por forma de pagamento</h3><div class="daily-cash-cards">'+cards+'</div>'+
+    '<section class="daily-cash-history"><h3>Resumo dos caixas por dia</h3>'+history+'</section></section>';
 }
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Configurações','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];

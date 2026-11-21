@@ -250,3 +250,26 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 .daily-cash-total { margin:14px 0; }
 .daily-cash-total summary { cursor:pointer;font-weight:700;color:var(--brand); }
 .daily-cash-total p { margin:8px 0 0;font-size:1.4rem; }
+
+.daily-cash-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  flex-wrap:wrap;
+  gap:10px;
+}
+.daily-cash-head h2 { margin-bottom:4px; }
+.daily-cash-head .daily-cash-total { margin-top:0; }
+.daily-cash-total summary {
+  padding:8px 12px;
+  border-radius:8px;
+  background:var(--tint);
+}
+.daily-cash-cards { display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px; }
+.daily-cash-card { display:grid;gap:4px;padding:12px;border-radius:10px;background:var(--tint); }
+.daily-cash-card strong { font-size:1.2rem; }
+.daily-cash-card small,.daily-cash-history summary span { color:var(--muted); }
+.daily-cash-history { margin:20px 0 14px; }
+.daily-cash-history details { padding:10px 2px;border-top:1px solid var(--line); }
+.daily-cash-history summary { cursor:pointer; }
+.daily-cash-history summary span { margin-left:8px; }
