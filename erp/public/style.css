@@ -273,3 +273,21 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 .daily-cash-history details { padding:10px 2px;border-top:1px solid var(--line); }
 .daily-cash-history summary { cursor:pointer; }
 .daily-cash-history summary span { margin-left:8px; }
+
+.sale-modes { display:flex;gap:8px;margin:0 0 10px;flex-shrink:0; }
+.sale-modes button { padding:.45em .8em; }
+.order label:has(#sale-comanda) { display:grid;gap:4px;margin-bottom:8px; }
+.pos {
+  width:100%;
+  max-width:none;
+  margin:0;
+  border-radius:0;
+}
+.pos.sale-landscape :is(.catalog,.order) { background:#fffdfabf; }
+@media(min-width:761px) {
+  #app:has(.pos) { padding:0; }
+  .pos { grid-template-columns:minmax(0,1.55fr) minmax(350px,1fr); }
+}
+@media(max-width:760px) {
+  .pos { min-height:calc(100dvh - 104px); }
+}

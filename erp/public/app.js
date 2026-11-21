@@ -9,6 +9,22 @@ let data, busy=false, view='sales', tab='Resumo', category='Açaí', search='', 
 const app=$('#app'), dialog=$('#dialog');
 let timer;
 let selectedTable = null, selectedOpening = null;
+let saleMode='direct', comandaTarget='';
+function setSaleMode(mode){
+  if(saleMode===mode)return;
+  saleMode=mode;
+  if(mode==='comanda'){selectComanda(comandaTarget);return;}
+  selectedTable=null;
+  selectedOpening=null;
+  render();
+}
+function selectComanda(id){
+  const table=data.tables.find(t=>t.id===id);
+  comandaTarget=table?.id||'';
+  selectedTable=table?.opened?table.id:null;
+  selectedOpening=table?.opened||null;
+  render();
+}
 function notice(message) {
   $('#notice').textContent=message;
   clearTimeout(timer);
@@ -54,7 +70,8 @@ function review(message) {
 function sameTable(next, expected) {
   const current = next.tables.find(t=>t.id===expected.id);
   if (!current || current.opened !== expected.opened) {
-    if (selectedTable === expected.id) selectedTable = null;
+    if(selectedTable===expected.id)selectedTable=null;
+    if(comandaTarget===expected.id)comandaTarget='';
     throw review('A ocupação da mesa mudou. Confira a mesa antes de continuar.');
   }
   return current;
@@ -312,30 +329,30 @@ function tables() {
 }
 function openTable(id) {
   const t = data.tables.find(table=>table.id===id);
-  const enter = () => { selectedTable=id; selectedOpening=tableOrder().opened; view='sales'; };
+  const enter = () => { saleMode='comanda'; comandaTarget=id; selectedTable=id; selectedOpening=tableOrder().opened; view='sales'; };
   if (t.opened) { enter(); render(); return; }
   fields('Abrir mesa ' + id, input('Nome da mesa / cliente','name','','text','maxlength="100"'), async v => {
     await save(next => Object.assign(sameTable(next,t), {name:v.name.trim(),opened:date(),service:true}), true);
     enter();
   },'Abrir mesa');
 }
-function sendToTable() {
+function sendToTable(id) {
   const items = order();
   if (!items.length) return;
-  const available = data.tables;
-  const choices = [['','Escolha a mesa'], ...available.map(t=>[t.id,'Mesa '+t.id+' — '+(t.opened?(t.name||'Ocupada'):'Livre')])];
-  fields('Enviar pedido para mesa',select('Mesa','table',choices,'')+
-    input('Nome do cliente (mesa livre)','name','','text','maxlength="100"')+
-    '<p>Uma mesa livre recebe a taxa deste pedido. Uma mesa ocupada mantém a taxa da comanda.</p>', async values=>{
-    const target = available.find(t=>t.id===values.table);
+  const target = data.tables.find(t=>t.id===id);
+  if(!target){notice('Escolha uma mesa antes de lançar na comanda.');$('#sale-comanda')?.focus();return;}
+  fields('Lançar na comanda · Mesa '+esc(id),
+    target.opened?'<p>Adicionar os itens à comanda aberta.</p>':
+      input('Nome do cliente','name','','text','maxlength="100"')+'<p>A mesa será aberta com os itens do pedido.</p>', async values=>{
     await save(next=>{
-      const table = sameTable(next,target);
-      if (!table.opened) Object.assign(table,{opened:date(),service:counterService,name:values.name.trim()});
+      const table=sameTable(next,target);
+      if(!table.opened)Object.assign(table,{opened:date(),service:counterService,name:values.name.trim()});
       table.items.push(...items);
     },true);
-    cart={}; buyer=null;counterService=true; selectedTable=target.id; selectedOpening=tableOrder().opened;
-    notice('Pedido enviado à mesa '+target.id+'.');
-  },'Enviar pedido');
+    cart={};buyer=null;counterService=true;
+    saleMode='comanda';comandaTarget=target.id;selectedTable=target.id;selectedOpening=tableOrder().opened;
+    notice('Itens lançados na comanda da mesa '+target.id+'.');
+  },'Lançar na comanda');
 }
 function addTableItems() {
   const items = order(), target = tableOrder();
@@ -343,7 +360,7 @@ function addTableItems() {
   fields('Salvar pedido da mesa', '<p>Os itens serão adicionados à comanda.</p>', async () => {
     await save(next => sameTable(next,target).items.push(...items),true);
     cart = {};
-  }, 'Salvar pedido');
+  }, 'Lançar na comanda');
 }
 function receiveTable() {
   const t = tableOrder();
@@ -387,7 +404,7 @@ function closeTable() {
       Object.assign(table,{name:'',opened:null,items:[],payments:[],service:false});
     },true);
     const closed=data.closedTables.find(t=>t.receiptId===operationId);
-    selectedTable=null;view='tables';
+    selectedTable=null;comandaTarget='';view='tables';
     return {receipt:tableReceipt(closed)};
   },'Encerrar mesa');
 }
@@ -410,7 +427,7 @@ function cancelTable(){
           draft,total,paid,balance,draftTotal:sum(draft,'total')});
         Object.assign(current,{name:'',opened:null,items:[],payments:[],service:false});
       },true);
-      cart={};buyer=null;selectedTable=null;selectedOpening=null;counterService=true;view='tables';
+      cart={};buyer=null;selectedTable=null;selectedOpening=null;comandaTarget='';counterService=true;view='tables';
       notice('Comanda cancelada. A mesa está livre.');
     },'Sim','Não');
 }
@@ -563,16 +580,16 @@ function removeBackground(id){
   catch{notice('Não foi possível remover a foto neste dispositivo.');}
 }
 function sales(){
-  const layout=salesLayout();
+  const layout=salesLayout(), comanda=saleMode==='comanda';
   const categories=frontCategories().filter(c=>!c.hidden);
   if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
-  <aside class="order"><h2>Pedido atual</h2>${selectedTable?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
+  app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-modes" aria-label="Modo de venda"><button data-sale-mode="direct" aria-pressed="${!comanda}" class="${!comanda?'active':''}">Venda direta</button><button data-sale-mode="comanda" aria-pressed="${comanda}" class="${comanda?'active':''}">Só comanda</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div><div class="tabs">${categories.map(({name:c})=>`<button data-category="${esc(c)}" class="${c===category?'active':''}">${esc(c)}</button>`).join('')}</div><div id="products" class="grid"></div></section>
+  <aside class="order"><h2>${comanda?'Só comanda':'Pedido atual'}</h2>${comanda?select('Comanda','sale-comanda',[['','Escolha a mesa'],...data.tables.map(t=>[t.id,'Mesa '+t.id+' · '+(t.opened?(t.name||'Ocupada'):'Livre')])],comandaTarget).replace('name="sale-comanda"','id="sale-comanda" name="sale-comanda"'):''}${comanda?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!lines.length?'disabled':(!comanda&&!total?'disabled':'')}>${comanda?'Lançar na comanda':'Receber pagamento'}</button><div class="payments" ${comanda?'hidden':''}>${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
     $('.catalog h1').textContent = 'Mesa ' + t.id + (t.name ? ' — ' + t.name : '');
-    $('.order h2').textContent = 'Novos itens';
+    $('.order h2').textContent = 'Comanda · Mesa ' + t.id;
     const panel=document.createElement('section');
     panel.className='panel table-balance';
     panel.innerHTML='<button data-rename>Editar nome</button> <button data-view="tables">Ver mesas</button>' +
@@ -583,15 +600,8 @@ function sales(){
       '<button data-table-receive>Pagamento parcial / total</button> <button data-table-close>Encerrar mesa</button> <button data-table-cancel>Cancelar comanda</button>';
     $('.order').appendChild(panel);
     $('.pos').classList.add('table-mode');
-    $('.order [data-pay]').textContent='Salvar pedido na mesa';
-    $('.payments').hidden=true;
   }
-  if (!selectedTable && lines.length) {
-    const button=document.createElement('button');
-    button.textContent='Enviar para mesa';
-    button.onclick=sendToTable;
-    $('.order [data-pay]').before(button);
-  }
+  if(comanda)$('#sale-comanda').onchange=event=>selectComanda(event.target.value);
   $('#search').onkeydown=e=>{
     if(e.key!=='Enter' || !e.target.value.trim()) return;
     e.preventDefault();entry(e.target.value);
@@ -626,7 +636,10 @@ function tenderTotal(sales,method) {
   return sales.reduce((total,sale)=>total+(sale.payments ? sum(sale.payments.filter(p=>p.method===method),'amount') : sale.method===method ? sale.total : 0),0);
 }
 function payment(method){
-  if(selectedTable){addTableItems();return;}
+  if(saleMode==='comanda'){
+    if(selectedTable)addTableItems();else sendToTable(comandaTarget);
+    return;
+  }
   if(!data.cash){notice('Abra o caixa para registrar a venda.');cash();return;}
   const items=order(), fee=serviceCharge(items,counterService), total=sum(items,'total')+fee, shift=data.cash;
   const staffBuyer=buyer?.type==='employee'?buyer:null;
@@ -1353,7 +1366,7 @@ function render(){
   if(!canView(view))view=view==='back'?'sales':'back';
   for(const button of document.querySelectorAll('header [data-view]'))button.hidden=!canView(button.dataset.view);
   $('#functions').hidden=$('#cash').hidden=!canView('sales');
-  if (selectedTable && (!tableOrder()?.opened || tableOrder().opened!==selectedOpening)) selectedTable=null;
+  if (selectedTable && (!tableOrder()?.opened || tableOrder().opened!==selectedOpening)){selectedTable=null;comandaTarget='';}
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   $('#cash').innerHTML=data.cash?'<span class="dot">●</span> Caixa aberto':'<span class="closed">●</span> Caixa fechado';
   if(view==='sales')sales();else if(view==='tables')tables();else back();
@@ -1363,13 +1376,14 @@ document.addEventListener('click',e=>{
   if(!button||!data||busy)return;
   const d=button.dataset;
   if(button.id==='functions'){functionMenu();return;}
+  if(d.saleMode){setSaleMode(d.saleMode);return;}
   if(d.view){
     if(!canView(d.view))return;
     if(order().length && (d.view!==view || selectedTable)){
-      notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, toque em Enviar para mesa.');
+      notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, selecione Só comanda.');
       return;
     }
-    view=d.view;if(view==='sales')selectedTable=null;if(!order().length)buyer=null;render();
+    view=d.view;if(view==='sales'){selectedTable=null;comandaTarget='';}if(!order().length)buyer=null;render();
   }
   if(d.exit!==undefined){exitSystem();return;}
   if(d.letter && canView('sales')){dialog.close();letterFunctions[d.letter].run();return;}
