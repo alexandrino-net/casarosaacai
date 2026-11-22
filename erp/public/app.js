@@ -1188,8 +1188,13 @@ function dailyCashSummary(state){
   const isToday=selected===today;
   const methods=cashMethods(days.get(selected));
   const total=methods.reduce((sum,[,amount])=>sum+amount,0);
-  const dayStatus=(day,entry)=>day===today?(state.cash?'Aberto':'Fechado'):
-    day===receiptDate(state.cash?.opened)?'Aberto':entry.closed?'Fechado':'Registrado';
+  const dayStatus=(day,entry)=>{
+    if(state.cash && (day===today || day===receiptDate(state.cash.opened)))return 'Aberto';
+    if(entry.closed)return 'Fechado';
+    return entry.count?'Registrado':'Não aberto';
+  };
+  const status=dayStatus(selected,days.get(selected));
+  const totalLabel=isToday?'Total de hoje':'Total do dia';
   const cards=methods.map(([method,amount,count])=>
     '<article class="daily-cash-card"><span>'+esc(method)+'</span><strong>'+money(amount)+'</strong><small>'+count+' recebimento(s)</small></article>').join('');
   const history=[...days].sort(([a],[b])=>b.localeCompare(a)).map(([day,entry])=>{
@@ -1202,11 +1207,11 @@ function dailyCashSummary(state){
     '<div class="daily-cash-days">'+history+'</div></aside>'+
     '<section class="daily-cash panel"><div class="daily-cash-head"><div><h2>'+
     (isToday?'Caixa de hoje':'Caixa de '+esc(displayCashDate(selected)))+'</h2><p>'+esc(displayCashDate(selected))+' · '+
-    (isToday?'Caixa '+dayStatus(selected,days.get(selected)).toLocaleLowerCase('pt-BR'):dayStatus(selected,days.get(selected)))+'</p></div>'+
-    (isToday?'<div class="daily-cash-total">'+
-      (canView('sales')?'<button type="button" class="primary" data-cash>'+(state.cash?'Fechar caixa':'Abrir caixa')+'</button>':'')+
-      '<p>Total de hoje<br><strong>'+money(total)+'</strong></p></div>':'')+'</div>'+
-    '<h3>Recebimentos por forma de pagamento</h3><div class="daily-cash-cards">'+cards+'</div></section></div>';
+    status+'</p></div><div class="daily-cash-total">'+
+    (isToday&&canView('sales')?'<button type="button" class="primary" data-cash>'+(state.cash?'Fechar caixa':'Abrir caixa')+'</button>':'')+
+    (status!=='Não aberto'?'<p>'+totalLabel+'<br><strong>'+money(total)+'</strong></p>':'')+'</div></div>'+
+    (status==='Não aberto'?'<p>O caixa ainda não foi aberto nesta data.</p>':
+      '<h3>Recebimentos por forma de pagamento</h3><div class="daily-cash-cards">'+cards+'</div>')+'</section></div>';
 }
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Configurações','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
