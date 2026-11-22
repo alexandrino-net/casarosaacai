@@ -338,7 +338,7 @@ function tables() {
 function openTable(id) {
   const t = data.tables.find(table=>table.id===id);
   const enter = () => { saleMode='comanda'; comandaTarget=id; selectedTable=id; selectedOpening=tableOrder().opened; view='sales'; };
-  if (t.opened) { enter(); render(); return; }
+  if (t.opened) { enter(); render(); void refreshTables(); return; }
   fields('Abrir mesa ' + id, input('Nome da mesa / cliente','name','','text','maxlength="100"'), async v => {
     await save(next => Object.assign(sameTable(next,t), {name:v.name.trim(),opened:date(),service:true}), true);
     enter();
@@ -1493,6 +1493,7 @@ document.addEventListener('click',e=>{
       return;
     }
     view=d.view;if(view==='sales'){selectedTable=null;comandaTarget='';}if(!order().length)buyer=null;render();
+    if(view==='tables')void refreshTables();
   }
   if(d.exit!==undefined){exitSystem();return;}
   if(d.letter && canView('sales')){dialog.close();letterFunctions[d.letter].run();return;}
@@ -1548,11 +1549,26 @@ document.addEventListener('click',e=>{
   }
 });
 Promise.all([loadState(),fetch('/api/sessao').then(r=>r.json())]).then(([state,user])=>{data=state;session=user;$('#operator').textContent=user.name;render();}).catch(()=>notice('Não foi possível carregar o sistema.'));
-async function refreshTables() {
-  if (!data || view!=='tables' || busy || dialog.open || document.hidden) return;
-  try {
+let refreshingTables=false;
+function canRefreshTables(){
+  if(!data || busy || dialog.open || document.hidden)return false;
+  if(view==='tables')return true;
+  return view==='sales' && Boolean(selectedTable) && !order().length &&
+    !document.activeElement?.matches('input, select, textarea, [contenteditable]');
+}
+async function refreshTables(){
+  if(refreshingTables || !canRefreshTables())return;
+  refreshingTables=true;
+  try{
     const current=await loadState();
-    if (current.rev>data.rev && view==='tables' && !busy && !dialog.open) {data=current;render();}
-  } catch { /* The next refresh retries. */ }
+    if(!canRefreshTables() || current.rev<=data.rev)return;
+    const tableChanged=JSON.stringify(current.tables)!==JSON.stringify(data.tables);
+    const cashChanged=Boolean(current.cash)!==Boolean(data.cash);
+    data=current;
+    if(view==='sales' || tableChanged || cashChanged)render();
+  }catch{ /* The next refresh retries. */ }
+  finally{refreshingTables=false;}
 }
 setInterval(refreshTables,5000);
+document.addEventListener('visibilitychange',refreshTables);
+window.addEventListener('focus',refreshTables);
