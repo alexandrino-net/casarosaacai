@@ -378,25 +378,48 @@ function receiveTable() {
   if (balance <= 0) { notice('Mesa sem saldo pendente.'); return; }
   fields('Receber da mesa ' + t.id,
     '<p>Saldo ' + money(balance) + '</p>' +
-    amount('Valor do pagamento','amount',(balance/100).toFixed(2),'.01') +
+    amount('<span id="table-payment-label">Valor do pagamento</span>','amount',(balance/100).toFixed(2),'.01') +
     paymentChoices(splitMethods)+'<div id="payment-extra"></div>', async v => {
-      const value=cents(v.amount);
-      if (!Number.isSafeInteger(value) || value <= 0 || value > balance)
+      const entered=cents(v.amount);
+      const inCash=v.method==='Dinheiro';
+      const value=inCash?Math.min(entered,balance):entered;
+      if (!Number.isSafeInteger(entered) || value <= 0 || value > balance)
         throw Error('Informe um valor entre R$ 0,01 e o saldo da mesa.');
       const parts=tenderParts(v,value);
+      const change=inCash?entered-value:0;
       await save(next => {
         checkShift(next,shift);
         const table = sameTable(next,t);
-        if (tablePaid(table)!==tablePaid(t) || value>tableTotal(table)-tablePaid(table))
+        if (tablePaid(table)!==tablePaid(t) || balance!==tableTotal(table)-tablePaid(table))
           throw review('A mesa recebeu outro pagamento. Confira o saldo atualizado.');
-        const receipt={id:crypto.randomUUID(),amount:value,method:v.method,time:date(),shift:next.cash.id};
+        const cashDetails=inCash?{given:entered,change}:{};
+        const receipt={id:operationId,amount:value,method:v.method,time:date(),shift:next.cash.id,...cashDetails};
         table.payments.push(...parts.map(part=>({...receipt,...part})));
         next.sales.push({id:receipt.id,shift:receipt.shift,time:receipt.time,items:[],
-          total:value,payments:parts,method:v.method,customer:table.name,table:table.id,partial:true});
+          total:value,payments:parts,method:v.method,customer:table.name,table:table.id,partial:true,...cashDetails});
       },true);
-      notice('Pagamento registrado no caixa.');
+      notice(change?'Pagamento registrado. Troco: '+money(change):'Pagamento registrado no caixa.');
     },'Registrar pagamento');
-  bindSplitFields();
+  const method=dialog.querySelector('[name=method]');
+  const amountField=dialog.querySelector('[name=amount]');
+  const updateCashPreview=()=>{
+    const entered=cents(amountField.value);
+    if(!Number.isSafeInteger(entered)||entered<=0){
+      $('#table-cash-preview').textContent='';
+      return;
+    }
+    const applied=Math.min(entered,balance);
+    $('#table-cash-preview').textContent='Abatimento: '+money(applied)+' · Troco: '+money(entered-applied);
+  };
+  method.onchange=()=>{
+    const inCash=method.value==='Dinheiro';
+    $('#table-payment-label').textContent=inCash?'Valor recebido em dinheiro':'Valor do pagamento';
+    $('#payment-extra').innerHTML=inCash?'<p id="table-cash-preview" role="status"></p>':
+      method.value==='Dividido'?splitFields():'';
+    amountField.oninput=inCash?updateCashPreview:null;
+    if(inCash)updateCashPreview();
+  };
+  method.onchange();
 }
 function closeTable() {
   const t=tableOrder();
