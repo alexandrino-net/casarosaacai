@@ -484,3 +484,35 @@ dialog:has(#table-tenders) button.primary:disabled {
 .sale-category-tabs > button.sale-more-categories.active {
   box-shadow:inset 0 0 0 2px #b8d4ff;
 }
+
+.comanda-window {
+  --comanda-bordo:#68112c;
+  --comanda-cobre:#b56d48;
+  --comanda-linha:#cfaf94;
+  --comanda-marfim:#fcf7ee;
+  --comanda-pessego:#f3e6d5;
+  --comanda-saldo:#f1e7d5;
+}
+.comanda-review-header { background:linear-gradient(110deg,#781535,#500e23); }
+.comanda-review-header h1, .comanda-review > :is(.catalog,.order) h2,
+.comanda-review .comanda-balance { font-family:Georgia,serif; }
+.comanda-review #products .card, .comanda-review-actions button {
+  border-color:var(--comanda-cobre);
+  background:#fff7eb;
+}
+.comanda-item-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.comanda-new { color:#68112c; background:#f3e6d5; border-radius:4px; padding:2px 5px; }
+.comanda-review-summary {
+  text-align:center; color:var(--comanda-bordo); background:var(--comanda-saldo);
+  padding:8px; border-radius:8px;
+}
+.comanda-review-summary p { margin:0 0 4px; }
+.comanda-review .comanda-balance { font-size:clamp(19px,2.5vw,30px); }
+.comanda-review .order > .primary { flex-shrink:0; background:var(--comanda-bordo); }
+#comanda-weight:not([hidden]) {
+  display:flex; align-items:end; flex-wrap:wrap; gap:8px;
+  border:1px solid var(--comanda-linha); border-radius:8px; padding:8px;
+}
+#comanda-weight label { flex:1 1 90px; margin:0; }
+#comanda-weight input { width:100%; }
+#comanda-weight output, #comanda-weight strong { align-self:center; }
