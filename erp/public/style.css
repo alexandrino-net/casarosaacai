@@ -727,3 +727,23 @@ dialog:has(#table-tenders) button.primary:disabled {
   .mobile-attendance .comanda-review-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .mobile-attendance .comanda-review button { min-height:44px; }
 }
+
+#mobile-nav[hidden] { display:none; }
+.mobile-attendance { --mobile-nav-height:62px; padding-bottom:calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)); }
+.mobile-attendance header nav,
+.mobile-attendance header #functions,
+.mobile-attendance header [data-exit] { display:none; }
+.mobile-attendance #mobile-nav {
+  position:fixed; z-index:8; inset:auto 0 0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px; min-height:var(--mobile-nav-height); padding:6px 12px calc(6px + env(safe-area-inset-bottom));
+  color:#57142b; background:#fffaf4; border-top:1px solid #e0b39f;
+}
+#mobile-nav button { min-height:48px; display:grid; place-content:center; justify-items:center; gap:3px; font-weight:650; font-size:.78rem; padding:4px 6px; background:transparent; }
+#mobile-nav button[hidden] { display:none; }
+#mobile-nav button[aria-current] { color:#fff; background:#68112d; }
+#mobile-nav svg { width:21px; height:21px; }
+.mobile-attendance #notice { bottom:calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + 8px); }
+.mobile-more { display:grid; gap:10px; }
+.mobile-more label { display:grid; gap:6px; }
+.mobile-more button { min-height:44px; text-align:left; }
+.mobile-comanda { --comanda-bordo:var(--brand); --comanda-marfim:var(--paper); --comanda-cobre:var(--copper); --comanda-linha:var(--line); --comanda-pessego:var(--tint); --comanda-saldo:#f8dfd3; }

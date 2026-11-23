@@ -8,7 +8,7 @@ const stamp = value => new Date(value).toLocaleString('pt-BR');
 const mobileAttendance=location.pathname==='/atendimento';
 const mobileLayoutKey='casa-rosa:visual-atendimento';
 const mobileLayouts=[['cards','Cartões'],['list','Lista rápida'],['queue','Atendimento'],['combined','Combinado']];
-let mobileLayout='combined';
+let mobileLayout='combined', mobilePane='tables';
 if(mobileAttendance){
   document.body.classList.add('mobile-attendance');
   try{
@@ -370,15 +370,26 @@ function mobileTables(){
     (grouped?groups.filter(([,items])=>items.length).map(([label,items])=>'<h2>'+label+' ('+items.length+')</h2>'+
       grid(items,mobileLayout==='combined'?'cards':'list')).join(''):grid(data.tables,mobileLayout))+'</section>';
 }
+function mobileMore(){
+  const options=mobileLayouts.map(([key,label])=>'<option value="'+key+'" '+(key===mobileLayout?'selected':'')+'>'+label+'</option>').join('');
+  return '<section class="mobile-tables mobile-more"><h1>Mais</h1><label>Visual do app <select id="mobile-layout">'+options+'</select></label>'+
+    (canView('sales')?'<button type="button" data-view="sales">Vendas</button>':'')+
+    (canView('back')?'<button type="button" data-view="back">Retaguarda</button>':'')+
+    '<button type="button" data-exit>Sair</button></section>';
+}
 function tables() {
   if(mobileAttendance){
-    app.innerHTML=mobileTables();
-    $('#mobile-layout').onchange=event=>{
+    app.innerHTML=mobilePane==='orders'?'<section class="mobile-tables">'+openComandaCards(true)+'</section>':
+      mobilePane==='more'?mobileMore():mobileTables();
+    const layout=$('#mobile-layout');
+    if(layout)layout.onchange=event=>{
       mobileLayout=event.target.value;
       try{localStorage.setItem(mobileLayoutKey,mobileLayout);}catch{}
+    };
+    if(layout && mobilePane==='tables')layout.addEventListener('change',()=>{
       tables();
       $('#mobile-layout').focus();
-    };
+    });
     return;
   }
   app.innerHTML='<section class="table-landscape"><div class="back"><h1>Mesas e comandas</h1><div class="table-map finance-table-map">'+data.tables.map(t=>{
@@ -769,18 +780,18 @@ function saleCategoryButtons(categories){
   const menu=others.length?'<div id="sale-category-menu" class="sale-category-menu" hidden>'+others.map(button).join('')+'</div>':'';
   return '<nav class="sale-category-tabs" aria-label="Categorias dos produtos">'+favorites.map(button).join('')+toggle+menu+'</nav>';
 }
-function openComandaCards(){
-  const tables=data.tables.filter(table=>table.opened&&table.items?.length);
+function openComandaCards(includeEmpty=false){
+  const tables=data.tables.filter(table=>table.opened&&(includeEmpty||table.items?.length));
   const icon='<svg aria-hidden="true" viewBox="0 0 32 32"><path d="m8 14-2 12m18-12 2 12" fill="none" stroke="#96512e" stroke-width="3" stroke-linecap="round"/><ellipse cx="16" cy="12" rx="13" ry="4" fill="#be7950" stroke="#96512e"/></svg>';
   return '<h2>Comandas abertas</h2>'+(tables.length?'<div class="open-comanda-grid">'+tables.map(table=>{
-    const count=table.items.length;
+    const count=table.items?.length||0;
     const label='Mesa '+String(table.id).padStart(2,'0');
     return '<article class="open-comanda-card"><div class="open-comanda-heading"><span>'+icon+'</span><div><strong>'+esc(label)+'</strong>'+
       (table.name?'<small>'+esc(table.name)+'</small>':'')+'</div></div><div class="open-comanda-info"><span>'+
       count+(count===1?' item':' itens')+'</span><strong>'+money(tableTotal(table)-tablePaid(table))+'</strong></div>'+
       (table.billRequestedAt&&tableTotal(table)>tablePaid(table)?'<span class="table-bill-request">Conta solicitada</span>':'')+
       '<button class="primary" data-table="'+esc(table.id)+'" aria-label="Conferir '+esc(label)+'">Conferir</button></article>';
-  }).join('')+'</div>':'<p>Nenhuma mesa aberta com pedidos.</p>');
+  }).join('')+'</div>':'<p>'+(includeEmpty?'Nenhuma comanda aberta.':'Nenhuma mesa aberta com pedidos.')+'</p>');
 }
 function sales(){
   const layout=salesLayout(), comanda=saleMode==='comanda';
@@ -832,17 +843,25 @@ function sales(){
     status.textContent=$('#notice').textContent;
     pos.append(status);
     pos.classList.add('table-mode','comanda-review');
-    const reviewWindow=document.createElement('dialog');
-    reviewWindow.className='comanda-window';
-    reviewWindow.setAttribute('aria-labelledby','comanda-title');
-    reviewWindow.addEventListener('cancel',event=>{
-      event.preventDefault();
-      if(!busy)footer.querySelector('[data-view]').click();
-    });
-    tables();
-    reviewWindow.append(pos);
-    app.append(reviewWindow);
-    reviewWindow.showModal();
+    if(mobileAttendance){
+      const review=document.createElement('section');
+      review.className='mobile-comanda';
+      review.setAttribute('aria-labelledby','comanda-title');
+      review.append(pos);
+      app.replaceChildren(review);
+    }else{
+      const reviewWindow=document.createElement('dialog');
+      reviewWindow.className='comanda-window';
+      reviewWindow.setAttribute('aria-labelledby','comanda-title');
+      reviewWindow.addEventListener('cancel',event=>{
+        event.preventDefault();
+        if(!busy)footer.querySelector('[data-view]').click();
+      });
+      tables();
+      reviewWindow.append(pos);
+      app.append(reviewWindow);
+      reviewWindow.showModal();
+    }
   }
   $('#search').onkeydown=e=>{
     if(e.key!=='Enter' || !e.target.value.trim()) return;
@@ -1845,6 +1864,17 @@ function render(){
   if (selectedTable && (!tableOrder()?.opened || tableOrder().opened!==selectedOpening)){selectedTable=null;comandaTarget='';}
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   $('#cash').innerHTML=data.cash?'<span class="dot">●</span> Caixa aberto':'<span class="closed">●</span> Caixa fechado';
+  if(mobileAttendance){
+    const nav=$('#mobile-nav');
+    nav.hidden=false;
+    const current=view==='back'||(view==='sales'&&!selectedTable)?'more':mobilePane;
+    for(const button of nav.querySelectorAll('button')){
+      button.hidden=button.dataset.mobilePane!=='more'&&!canView('tables');
+      if(button.dataset.mobilePane===current)button.setAttribute('aria-current','page');
+      else button.removeAttribute('aria-current');
+    }
+    if(view==='back'&&mobilePane==='more'){tables();return;}
+  }
   if(view==='sales')sales();else if(view==='tables')tables();else back();
 }
 document.addEventListener('click',e=>{
@@ -1852,6 +1882,18 @@ document.addEventListener('click',e=>{
   if(!button||!data||busy)return;
   const d=button.dataset;
   if(button.id==='functions'){functionMenu();return;}
+  if(d.mobilePane && mobileAttendance){
+    if(d.mobilePane!=='more'&&!canView('tables'))return;
+    if(order().length){notice('Salve os itens antes de trocar de aba.');return;}
+    mobilePane=d.mobilePane;
+    view=canView('tables')?'tables':'back';
+    selectedTable=null;
+    selectedOpening=null;
+    comandaTarget='';
+    render();
+    if(mobilePane!=='more')void refreshTables();
+    return;
+  }
   if(d.saleMode){setSaleMode(d.saleMode);return;}
   if(d.view){
     if(!canView(d.view))return;
@@ -1860,6 +1902,7 @@ document.addEventListener('click',e=>{
       notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, selecione Mesas.');
       return;
     }
+    if(mobileAttendance&&d.view==='back')mobilePane='tables';
     if(d.view==='back'&&view!=='back'){tab='Resumo';summaryDay='';}
     view=d.view;if(view==='sales'){selectedTable=null;comandaTarget='';}if(!order().length)buyer=null;render();
     if(view==='tables')void refreshTables();
