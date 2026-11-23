@@ -747,3 +747,20 @@ dialog:has(#table-tenders) button.primary:disabled {
 .mobile-more label { display:grid; gap:6px; }
 .mobile-more button { min-height:44px; text-align:left; }
 .mobile-comanda { --comanda-bordo:var(--brand); --comanda-marfim:var(--paper); --comanda-cobre:var(--copper); --comanda-linha:var(--line); --comanda-pessego:var(--tint); --comanda-saldo:#f8dfd3; }
+
+dialog:has(.cash-close-content) { max-width:min(94vw,760px); max-height:92dvh; }
+.cash-close-opened { margin:0 0 12px; color:var(--muted); }
+.cash-close-metrics,.cash-close-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.cash-close-metrics { margin-bottom:14px; }
+.cash-close-metrics > div,.cash-close-grid > section { border:1px solid var(--line); border-radius:12px; padding:12px; background:var(--paper); }
+.cash-close-metrics > div { background:var(--tint); font-weight:650; }
+.cash-close-metrics strong { display:block; margin-top:4px; font-size:1.4rem; color:var(--brand); }
+.cash-close-grid h3 { color:var(--brand); margin:0 0 9px; }
+.cash-close-grid dl { margin:0 0 10px; }
+.cash-close-grid dl > div,.cash-close-difference { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); }
+.cash-close-grid dd { margin:0; white-space:nowrap; font-weight:650; }
+.cash-close-difference { border:0; background:var(--tint); padding:9px; border-radius:8px; }
+.cash-close-difference output { font-weight:750; }
+.cash-close-difference output[data-status="matched"] { color:#226440; }
+.cash-close-difference output[data-status="different"] { color:#843b15; }
+@media(max-width:560px) { .cash-close-grid { grid-template-columns:1fr; } }

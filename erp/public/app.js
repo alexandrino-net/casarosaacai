@@ -1094,21 +1094,44 @@ function cash(){
     return;
   }
   const shift=data.cash, sales=data.sales.filter(s=>s.shift===shift.id);
-  const expected=drawerBalance(data);
-  fields('Fechar caixa',`<p>Abertura em ${stamp(shift.opened)}</p><p>Fundo inicial <strong>${money(shift.initial)}</strong></p>
-  ${[...methods,'Vale em compras',...(tenderTotal(sales,'Cartão')?['Cartão']:[])].map(m=>`<p>${m} <strong>${money(tenderTotal(sales,m))}</strong></p>`).join('')}
-  ${shift.collections?.length?'<h3>Recebimentos de fiado</h3>'+splitMethods.filter(m=>tenderTotal(shift.collections,m)>0).map(m=>'<p>'+m+' <strong>'+money(tenderTotal(shift.collections,m))+'</strong></p>').join(''):''}
-  <p>Suprimentos <strong>${money(movementTotal(shift,'Suprimento'))}</strong></p>
-  <p>Sangrias <strong>${money(movementTotal(shift,'Sangria'))}</strong></p>
-  <p>Dinheiro esperado <strong>${money(expected)}</strong></p>${amount('Dinheiro contado','counted')}`,async v=>{
+  const expected=drawerBalance(data), collections=shift.collections||[];
+  const received=splitMethods.reduce((total,method)=>total+tenderTotal(sales,method)+tenderTotal(collections,method),0)
+    +tenderTotal(sales,'Cartão')+tenderTotal(collections,'Cartão');
+  const detail=(label,value)=>'<div><dt>'+esc(label)+'</dt><dd>'+money(value)+'</dd></div>';
+  const methodsSold=[...methods,'Vale em compras',...(tenderTotal(sales,'Cartão')?['Cartão']:[])];
+  fields('Conferência e fechamento',`<div class="cash-close-content">
+    <p class="cash-close-opened">Abertura <strong>${esc(stamp(shift.opened))}</strong></p>
+    <div class="cash-close-metrics"><div>Total recebido<strong>${money(received)}</strong></div>
+    <div>Dinheiro esperado na gaveta<strong>${money(expected)}</strong></div></div>
+    <div class="cash-close-grid"><section><h3>Vendas por forma de pagamento</h3>
+    <dl>${methodsSold.map(method=>detail(method,tenderTotal(sales,method))).join('')}</dl>
+    ${collections.length?'<h3>Recebimentos de fiado</h3><dl>'+[...splitMethods,'Cartão'].filter(method=>tenderTotal(collections,method)>0)
+      .map(method=>detail(method,tenderTotal(collections,method))).join('')+'</dl>':''}</section>
+    <section><h3>Conferência da gaveta</h3><dl>${detail('Fundo inicial',shift.initial)}
+    ${detail('Suprimentos',movementTotal(shift,'Suprimento'))}${detail('Sangrias',movementTotal(shift,'Sangria'))}</dl>
+    ${amount('Dinheiro contado','counted')}
+    <div class="cash-close-difference"><span>Diferença</span><output for="cash-counted" aria-live="polite">—</output></div></section></div>
+    </div>`,async v=>{
     if(order().length)throw new Error('Conclua ou retire os itens do pedido antes de fechar.');
     const counted=cents(v.counted);
+    if(!Number.isSafeInteger(counted)||counted<0)throw Error('Informe o dinheiro contado.');
     await save(next=>{
-      next.shifts.push({...shift,closed:date(),expected,counted,difference:counted-expected});
+      checkShift(next,shift);
+      const difference=counted-expected;
+      next.shifts.push({...shift,closed:date(),expected,counted,difference});
       next.cash=null;
     });
     notice('Caixa fechado. Diferença '+money(counted-expected)+'.');
-  },'Fechar caixa');
+  },'Confirmar fechamento');
+  const countedInput=dialog.querySelector('[name="counted"]');
+  const differenceOutput=dialog.querySelector('.cash-close-difference output');
+  countedInput.id='cash-counted';
+  countedInput.oninput=()=>{
+    const difference=cents(countedInput.value)-expected;
+    const valid=countedInput.validity.valid;
+    differenceOutput.value=valid?(difference<0?'Falta ':difference>0?'Sobra ':'Conferido · ')+money(Math.abs(difference)):'—';
+    differenceOutput.dataset.status=valid?(difference===0?'matched':'different'):'';
+  };
 }
 const names={Resumo:'Caixa',fixos:'Custos fixos',impostos:'Impostos',customers:'Clientes',suppliers:'Fornecedores',products:'Produtos',pagar:'A pagar',receber:'A receber'};
 const table=(headers,rows)=>rows.length?`<div class="table"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<p>Nenhum registro.</p>';
