@@ -1381,12 +1381,45 @@ function backNavigation(tabs){
     '<div class="back-nav-group"><h2>'+backIcon(icon)+label+'</h2>'+links.filter(([key])=>tabs.includes(key)).map(([key,symbol])=>
       '<button data-tab="'+esc(key)+'" '+(key===active?'aria-current="page"':'')+'>'+backIcon(symbol)+esc(names[key]||key)+'</button>').join('')+'</div>').join('')+'</nav>';
 }
-let summaryDay='';
+let summaryDay='', showDailyTotal=true;
+function selectedCashDay(days,today){
+  return days.has(summaryDay)?summaryDay:today;
+}
+function cashReport(kind){
+  const today=receiptDate(new Date()), days=cashDays(data,today);
+  const day=selectedCashDay(days,today);
+  const titles={cash:'Resumo do caixa',sales:'Caixa + vendas',closing:'Comprovante de fechamento'};
+  if(!Object.hasOwn(titles,kind))return;
+  const closings=data.shifts.filter(shift=>receiptDate(shift.closed)===day);
+  const methods=cashMethods(days.get(day));
+  const totals=table(['Forma de pagamento','Recebimentos','Valor'],
+    [...methods.map(([method,value,count])=>[esc(method),count,money(value)]),
+      ['<strong>Total recebido</strong>','',money(methods.reduce((total,[,value])=>total+value,0))]]);
+  const sales=kind==='sales'?'<h3>Vendas e lançamentos de comanda</h3>'+table(['Horário','Descrição','Pagamento','Valor lançado'],
+    data.sales.filter(sale=>receiptDate(sale.time)===day).map(sale=>[
+      esc(stamp(sale.time)),sale.table?'Mesa '+esc(sale.table)+(sale.partial?' · Pagamento registrado':''):'Venda direta',
+      sale.payments?.length?sale.payments.map(part=>esc(part.method)+' '+money(part.amount)).join('<br>'):esc(sale.method),
+      money(sale.total)])):'';
+  const closing=table(['Abertura','Fechamento','Fundo inicial','Dinheiro esperado','Dinheiro contado','Diferença'],
+    closings.map(s=>[esc(stamp(s.opened)),esc(stamp(s.closed)),money(s.initial),money(s.expected),money(s.counted),money(s.difference)]));
+  const report=document.createElement('dialog');
+  report.className='cash-report-dialog';
+  report.setAttribute('aria-labelledby','cash-report-title');
+  report.innerHTML='<article><h2 id="cash-report-title">'+titles[kind]+'</h2><p>Casa Rosa Açaí · '+esc(displayCashDate(day))+
+    '</p>'+(kind==='closing'?(closings.length?closing:'<p>Não há fechamento registrado nesta data.</p>'):totals+sales)+
+    '</article><div class="cash-report-actions"><button type="button">Voltar</button><button type="button" class="primary">Imprimir / Salvar PDF</button></div>';
+  report.querySelector('button').onclick=()=>report.close();
+  report.querySelector('.primary').onclick=()=>window.print();
+  report.addEventListener('close',()=>report.remove(),{once:true});
+  document.body.append(report);
+  report.showModal();
+}
+
 function dailyCashSummary(state){
   const today=receiptDate(new Date());
   const yesterday=new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
   const days=cashDays(state,today);
-  const selected=days.has(summaryDay)?summaryDay:today;
+  const selected=selectedCashDay(days,today);
   const isToday=selected===today;
   const methods=cashMethods(days.get(selected));
   const total=methods.reduce((sum,[,amount])=>sum+amount,0);
@@ -1410,7 +1443,11 @@ function dailyCashSummary(state){
     '<section class="daily-cash panel"><h2>'+(isToday?'Caixa de hoje':'Caixa de '+esc(displayCashDate(selected)))+
     (!isToday?'<small>'+status+'</small>':'')+'</h2><div class="daily-cash-body">'+
     (isToday&&canView('sales')?'<button type="button" class="primary daily-cash-control" data-cash>'+backIcon('lock')+(state.cash?'Fechar caixa':'Abrir caixa')+'</button>':'')+
-    '<div class="daily-cash-total"><span class="cash-icon">'+backIcon('register')+'</span><span>Total do dia<strong>'+money(total)+'</strong></span></div>'+
+    '<div class="daily-cash-total daily-cash-total-row"><span class="cash-icon">'+backIcon('register')+'</span><span>Total do dia</span>'+
+    '<button type="button" data-toggle-daily-total aria-controls="daily-total-value" aria-label="'+(showDailyTotal?'Ocultar total do dia':'Exibir total do dia')+
+    '" title="'+(showDailyTotal?'Ocultar total do dia':'Exibir total do dia')+'"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8">'+
+    '<path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>'+
+    (showDailyTotal?'':'<path d="m3 3 18 18"/>')+'</svg></button><strong id="daily-total-value">'+(showDailyTotal?money(total):'••••')+'</strong></div>'+
     '<div class="daily-cash-cards">'+cards+'</div></div></section></div>';
 }
 
@@ -1453,7 +1490,7 @@ function back(){
   }else if(tab==='Impressora'){content=printerPanel();}
   else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
-    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button type="button" class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button><button data-backup>Exportar dados</button></div>`;
+    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button type="button" class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button><details class="cash-print-menu"><summary>Imprimir</summary><div><button data-cash-report="cash">Resumo do caixa</button><button data-cash-report="sales">Caixa + vendas</button><button data-cash-report="closing">Comprovante de fechamento</button></div></details><button data-backup>Exportar dados</button></div>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total','Comprovante'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total),
       s.partial?'':'<button data-reprint="'+esc(s.id)+'">Reimprimir</button>']))}
@@ -1793,6 +1830,19 @@ document.addEventListener('click',e=>{
   if(d.receiveUpdate!==undefined){void receiveLocalUpdate();return;}
   if(d.printTest!==undefined){testPrint();return;}
   if(d.reprint!==undefined){reprintReceipt(d.reprint,d.reprintTable!==undefined);return;}
+  if(view==='back' && tab==='Resumo'){
+    if(d.toggleDailyTotal!==undefined){
+      showDailyTotal=!showDailyTotal;
+      $('#daily-cash-summary').innerHTML=dailyCashSummary(data);
+      $('[data-toggle-daily-total]').focus({preventScroll:true});
+      return;
+    }
+    if(d.cashReport){
+      button.closest('details').open=false;
+      cashReport(d.cashReport);
+      return;
+    }
+  }
   if(d.summaryDay && view==='back' && tab==='Resumo'){
     summaryDay=d.summaryDay;
     $('#daily-cash-summary').innerHTML=dailyCashSummary(data);

@@ -641,3 +641,22 @@ dialog:has(#table-tenders) button.primary:disabled {
   display:block; width:100%; border:1px solid #bc7932; border-radius:7px;
   padding:5px 6px; background:#fff1cc; color:#653a04; font-weight:700; font-size:.8rem;
 }
+
+.back-layout .daily-cash-total-row { padding:8px 10px; gap:8px; font-size:.95rem; }
+.back-layout .daily-cash-total-row strong { text-align:right; font-size:clamp(16px,1.55vw,22px); white-space:nowrap; }
+.daily-cash-total-row button { margin-left:auto; display:grid; place-items:center; padding:5px; background:transparent; color:inherit; }
+.daily-cash-total-row svg { width:20px; height:20px; }
+.cash-print-menu { position:relative; }
+.cash-print-menu summary { cursor:pointer; border-radius:10px; padding:.65em 1em; background:var(--tint); color:var(--brand); }
+.cash-print-menu > div { position:absolute; bottom:calc(100% + 6px); left:0; z-index:3; display:grid; width:max-content; gap:4px; padding:6px; border:1px solid var(--copper); border-radius:10px; background:var(--paper); box-shadow:0 6px 20px #43091f26; }
+.cash-print-menu button { text-align:left; }
+.cash-report-dialog { max-width:min(94vw,850px); max-height:85vh; }
+.cash-report-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+@media print {
+  body:has(.cash-report-dialog[open]) { margin:0; overflow:visible; background:white; }
+  body:has(.cash-report-dialog[open]) > :not(.cash-report-dialog) { display:none!important; }
+  .cash-report-dialog[open] { position:static; width:100%; max-width:none; height:auto; max-height:none; overflow:visible; padding:0; color:black; background:white; }
+  .cash-report-dialog::backdrop,.cash-report-actions { display:none; }
+  .cash-report-dialog .table { overflow:visible; }
+  .cash-report-dialog tr { break-inside:avoid; }
+}
