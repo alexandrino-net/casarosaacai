@@ -593,3 +593,19 @@ dialog:has(#table-tenders) button.primary:disabled {
 .back-cash-medium .daily-cash-card { padding:4px 8px; font-size:clamp(13px,1.16vw,18px); }
 .back-cash-medium .daily-cash-card strong { font-size:1.1em; }
 .back-cash-medium .cash-icon { min-width:2.25em; padding:.35em; }
+
+.sale-catalog-heading[hidden] { display:none; }
+.sale-modes .sale-collect { margin-left:auto; }
+.sale-modes [data-sale-mode="comanda"].active { background:#ac5c36; color:white; }
+.open-comanda-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr)); gap:8px; overflow:auto; }
+@media (min-width:620px) { .open-comanda-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.open-comanda-card {
+  display:grid; align-content:start; gap:8px; min-width:0; padding:9px;
+  background:#fff6ed; border:1px solid var(--copper); border-radius:12px;
+}
+.open-comanda-heading { display:flex; align-items:center; gap:9px; overflow-wrap:anywhere; }
+.open-comanda-heading > span { flex:none; display:grid; place-items:center; width:38px; height:34px; background:#f8d9ca; border-radius:8px; }
+.open-comanda-heading svg { width:25px; height:25px; }
+.open-comanda-heading small { display:block; }
+.open-comanda-info { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; background:#fae6db; padding:5px 6px; border-radius:6px; }
+.open-comanda-card button { width:100%; padding:5px 8px; }

@@ -13,17 +13,10 @@ let saleMode='direct', comandaTarget='';
 function setSaleMode(mode){
   if(saleMode===mode)return;
   saleMode=mode;
-  if(mode==='comanda'){selectComanda(comandaTarget);return;}
   selectedTable=null;
   selectedOpening=null;
   render();
-}
-function selectComanda(id){
-  const table=data.tables.find(t=>t.id===id);
-  comandaTarget=table?.id||'';
-  selectedTable=table?.opened?table.id:null;
-  selectedOpening=table?.opened||null;
-  render();
+  if(mode==='comanda')void refreshTables();
 }
 function notice(message) {
   $('#notice').textContent=message;
@@ -374,24 +367,6 @@ function openTable(id) {
     enter();
   },'Abrir mesa');
 }
-function sendToTable(id) {
-  const items = order();
-  if (!items.length) return;
-  const target = data.tables.find(t=>t.id===id);
-  if(!target){notice('Escolha uma mesa antes de lançar na comanda.');$('#sale-comanda')?.focus();return;}
-  fields('Lançar na comanda · Mesa '+esc(id),
-    target.opened?'<p>Adicionar os itens à comanda aberta.</p>':
-      input('Nome do cliente','name','','text','maxlength="100"')+'<p>A mesa será aberta com os itens do pedido.</p>', async values=>{
-    await save(next=>{
-      const table=sameTable(next,target);
-      if(!table.opened)Object.assign(table,{opened:date(),service:counterService,name:values.name.trim()});
-      table.items.push(...items);
-    },true);
-    cart={};buyer=null;counterService=true;
-    saleMode='comanda';comandaTarget=target.id;selectedTable=target.id;selectedOpening=tableOrder().opened;
-    notice('Itens lançados na comanda da mesa '+target.id+'.');
-  },'Lançar na comanda');
-}
 function addTableItems() {
   const items = order(), target = tableOrder();
   if (!items.length) return;
@@ -617,7 +592,6 @@ function bindNameSearch(){
     const row=event.target.closest('[data-match]');
     if(row)choose(Number(row.dataset.match));
   };
-  if($('#focus-code'))$('#focus-code').onclick=focusCode;
 }
 const salesLayouts=[
   ['current','Atual'],
@@ -733,13 +707,25 @@ function saleCategoryButtons(categories){
   const menu=others.length?'<div id="sale-category-menu" class="sale-category-menu" hidden>'+others.map(button).join('')+'</div>':'';
   return '<nav class="sale-category-tabs" aria-label="Categorias dos produtos">'+favorites.map(button).join('')+toggle+menu+'</nav>';
 }
+function openComandaCards(){
+  const tables=data.tables.filter(table=>table.opened&&table.items?.length);
+  const icon='<svg aria-hidden="true" viewBox="0 0 32 32"><path d="m8 14-2 12m18-12 2 12" fill="none" stroke="#96512e" stroke-width="3" stroke-linecap="round"/><ellipse cx="16" cy="12" rx="13" ry="4" fill="#be7950" stroke="#96512e"/></svg>';
+  return '<h2>Comandas abertas</h2>'+(tables.length?'<div class="open-comanda-grid">'+tables.map(table=>{
+    const count=table.items.length;
+    const label='Mesa '+String(table.id).padStart(2,'0');
+    return '<article class="open-comanda-card"><div class="open-comanda-heading"><span>'+icon+'</span><div><strong>'+esc(label)+'</strong>'+
+      (table.name?'<small>'+esc(table.name)+'</small>':'')+'</div></div><div class="open-comanda-info"><span>'+
+      count+(count===1?' item':' itens')+'</span><strong>'+money(tableTotal(table)-tablePaid(table))+'</strong></div>'+
+      '<button class="primary" data-table="'+esc(table.id)+'" aria-label="Conferir '+esc(label)+'">Conferir</button></article>';
+  }).join('')+'</div>':'<p>Nenhuma mesa aberta com pedidos.</p>');
+}
 function sales(){
   const layout=salesLayout(), comanda=saleMode==='comanda';
   const categories=frontCategories().filter(c=>!c.hidden);
   if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
-  app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split"><h1>Nova venda</h1><button data-collect>Receber fiado</button></div><div class="sale-modes" aria-label="Modo de venda"><button data-sale-mode="direct" aria-pressed="${!comanda}" class="${!comanda?'active':''}">Venda direta</button><button data-sale-mode="comanda" aria-pressed="${comanda}" class="${comanda?'active':''}">Só comanda</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div><div class="sale-search-help"><button id="focus-code" type="button">Voltar ao código</button><small>Esc volta ao código</small></div>${saleCategoryButtons(categories)}<div id="products" class="grid"></div></section>
-  <aside class="order"><h2>${comanda?'Só comanda':'Pedido atual'}</h2>${comanda?select('Comanda','sale-comanda',[['','Escolha a mesa'],...data.tables.map(t=>[t.id,'Mesa '+t.id+' · '+(t.opened?(t.name||'Ocupada'):'Livre')])],comandaTarget).replace('name="sale-comanda"','id="sale-comanda" name="sale-comanda"'):''}${comanda?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!lines.length?'disabled':(!comanda&&!total?'disabled':'')}>${comanda?'Lançar na comanda':'Receber pagamento'}</button><div class="payments" ${comanda?'hidden':''}>${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
+  app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split sale-catalog-heading" hidden></div><div class="sale-modes" aria-label="Modo de venda"><button data-sale-mode="direct" aria-pressed="${!comanda}" class="${!comanda?'active':''}">Venda direta</button><button data-sale-mode="comanda" aria-pressed="${comanda}" class="${comanda?'active':''}">Comandas abertas</button><button class="sale-collect" data-collect>Receber fiado</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div>${saleCategoryButtons(categories)}<div id="products" class="grid"></div></section>
+  <aside class="order">${comanda?openComandaCards():`<h2>Pedido atual</h2><button data-identify>${esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')}</button><div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!lines.length||!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div>`}</aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
     const catalog=$('.catalog'), orderPanel=$('.order');
@@ -748,9 +734,10 @@ function sales(){
     header.innerHTML='<div><h1 id="comanda-title">Conferir comanda</h1><p>Mesa '+esc(t.id)+(t.name?' · '+esc(t.name):'')+'</p></div>'+
       '<button type="button" data-view="tables" aria-label="Voltar às mesas">×</button>';
     $('.pos').prepend(header);
-    catalog.querySelector('.split').innerHTML='<h2>Catálogo</h2>';
+    const catalogHeading=catalog.querySelector('.sale-catalog-heading');
+    catalogHeading.hidden=false;
+    catalogHeading.innerHTML='<h2>Catálogo</h2>';
     catalog.querySelector('.sale-modes').hidden=true;
-    catalog.querySelector('.sale-search-help').remove();
     const rows=(items,saved)=>items.map((item,index)=>{
       const id=esc(item.id);
       return [qtyLabel(item),esc(item.name)+(saved?'':' <small class="comanda-new">Novo</small>'),money(item.total),
@@ -794,7 +781,6 @@ function sales(){
     app.append(reviewWindow);
     reviewWindow.showModal();
   }
-  if(comanda&&!selectedTable)$('#sale-comanda').onchange=event=>selectComanda(event.target.value);
   $('#search').onkeydown=e=>{
     if(e.key!=='Enter' || !e.target.value.trim()) return;
     e.preventDefault();entry(e.target.value);
@@ -837,7 +823,7 @@ function tenderTotal(sales,method) {
 }
 function payment(method){
   if(saleMode==='comanda'){
-    if(selectedTable)addTableItems();else sendToTable(comandaTarget);
+    if(selectedTable)addTableItems();else notice('Escolha uma comanda aberta para conferir os itens.');
     return;
   }
   if(!data.cash){notice('Abra o caixa para registrar a venda.');cash();return;}
@@ -1735,8 +1721,9 @@ document.addEventListener('click',e=>{
   if(d.saleMode){setSaleMode(d.saleMode);return;}
   if(d.view){
     if(!canView(d.view))return;
-    if(order().length && (d.view!==view || selectedTable)){
-      notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, selecione Só comanda.');
+    const assigningDraft=view==='sales'&&!selectedTable&&d.view==='tables';
+    if(order().length && !assigningDraft && (d.view!==view || selectedTable)){
+      notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, selecione Mesas.');
       return;
     }
     if(d.view==='back'&&view!=='back'){tab='Resumo';summaryDay='';}
@@ -1803,7 +1790,7 @@ let refreshingTables=false;
 function canRefreshTables(){
   if(!data || busy || dialog.open || document.hidden)return false;
   if(view==='tables')return true;
-  return view==='sales' && Boolean(selectedTable) && !order().length &&
+  return view==='sales' && (Boolean(selectedTable)||saleMode==='comanda') && !order().length &&
     !document.activeElement?.matches('input, select, textarea, [contenteditable]');
 }
 async function refreshTables(){
