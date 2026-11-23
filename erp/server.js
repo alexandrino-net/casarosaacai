@@ -345,7 +345,8 @@ const server = http.createServer(async (req, res) => {
   const origin=process.env.PUBLIC_ORIGIN || 'http://'+req.headers.host;
   const signIn=(status,error='')=>{
     res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
-    res.end(loginPage('/entrar','login',error));
+    const palette='body{background-color:#f7ede4;color:#42111d}main{background:#fffbf5;border:1px solid #ad7355}input{border-color:#ad7355;background:#fffdf9}button{background:#581927;border-color:#581927}a{color:#581927}#login-photo-credit{background:#42111d}:focus-visible{outline:3px solid #875039;outline-offset:2px}';
+    res.end(loginPage('/entrar','login',error).replace('</style>',palette+'</style>'));
   };
   if(url==='/entrar' && req.method==='GET')return signIn(200);
   if((url==='/entrar'||url==='/sair') && req.method==='POST'){

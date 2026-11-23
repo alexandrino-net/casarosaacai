@@ -31,7 +31,7 @@ h2{font-size:clamp(21px,1.9vw,28px)}
 .table-map{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:18px;margin-top:22px}
 .dining-table{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 8px;background:#fff;border:1px solid #e8bec7;min-height:214px}
 .table-drawing{position:relative;display:block;width:100px;height:94px;margin-bottom:4px;color:#28794e}
-.occupied .table-drawing{color:#861453}
+.occupied .table-drawing{color:var(--brand)}
 .partial .table-drawing{color:#976307}
 .table-top{position:absolute;inset:17px 20px;display:grid;place-items:center;border:3px solid currentColor;border-radius:16px;font-size:24px;font-weight:700;background:#fdf7fa}
 .chair{position:absolute;background:currentColor;border-radius:5px}
@@ -41,7 +41,7 @@ h2{font-size:clamp(21px,1.9vw,28px)}
 .chair.left{left:4px}.chair.right{right:4px}
 .table-name{overflow-wrap:anywhere;max-width:100%}
 .table-status{font-weight:700}
-.free .table-status{color:#28794e}.occupied .table-status{color:#861453}.partial .table-status{color:#976307}
+.free .table-status{color:#28794e}.occupied .table-status{color:var(--brand)}.partial .table-status{color:#976307}
 @media(min-width:761px){
  body:has(.pos){height:100dvh;overflow:hidden}
  header{min-height:58px;flex-wrap:nowrap}
@@ -109,31 +109,31 @@ header #functions {background:transparent;color:inherit;text-decoration:underlin
 .function-table button {min-height:44px;width:100%;text-align:left}
 .function-error {color:#8d1738}
 
-/* Casa Rosa — ameixa, champanhe e superfícies de marfim. */
+/* Casa Rosa — bordô, cobre e marfim. */
 :root {
-  --ink:#271d27; --muted:#685860; --brand:#67284b; --brand-dark:#2c1728;
-  --gold:#e8cda2; --canvas:#f5f1ed; --paper:#fffdfa; --line:#e3d9d5;
-  --tint:#efe5ea; --focus:#96612d;
+  --ink:#291c19; --muted:#6d554a; --brand:#581927; --brand-dark:#42111d;
+  --gold:#e2b699; --canvas:#f7ede4; --paper:#fffbf5; --line:#dec1b1;
+  --tint:#f5d5c8; --focus:#875039; --copper:#ad7355;
 }
 body {background:var(--canvas);color:var(--ink)}
-header {background:linear-gradient(110deg,#241621,#48243c);border-bottom:2px solid #b58d61;gap:clamp(8px,1.4vw,20px)}
-header button.active {background:var(--gold);color:#352029}
+header {background:linear-gradient(110deg,#42111d,#581927);border-bottom:2px solid var(--copper);gap:clamp(8px,1.4vw,20px)}
+header button.active {background:var(--gold);color:var(--brand-dark)}
 header button:not(.active):hover {background:#ffffff1f}
-header #cash {border-color:#d2b695}
+header #cash {border-color:var(--gold)}
 h1,h2,h3 {color:var(--brand-dark);letter-spacing:-.02em}
-.pos {border-color:var(--line);background:#f8f4f1;box-shadow:0 8px 32px #34203114}
+.pos {border-color:var(--line);background:var(--canvas);box-shadow:0 8px 32px #42111d14}
 .order,.panel,.stat,.card,dialog {background:var(--paper);color:var(--ink)}
 .order,.card,.dining-table,.line,.total,td,th {border-color:var(--line)}
 .card {box-shadow:0 2px 5px #34203108}
-.placeholder,.table-top {background:#f2e7ea}
-button {background:var(--tint);color:#492138}
+.placeholder,.table-top {background:#f8dfd3}
+button {background:var(--tint);color:var(--brand-dark)}
 button:hover:not(:disabled) {filter:brightness(.96)}
 .active,.primary,.add {background:var(--brand);color:white}
-input,select {border-color:#b8a8b0;color:var(--ink);background:white}
+input,select,textarea {border-color:var(--copper);color:var(--ink);background:#fffdf9}
 :focus-visible {outline:3px solid var(--focus);outline-offset:2px}
 header :focus-visible {outline-color:var(--gold)}
-th {background:#f2ece9;color:var(--brand-dark)}
-dialog::backdrop {background:#211820aa}
+th {background:var(--tint);color:var(--brand-dark)}
+dialog::backdrop {background:#241419a6}
 #notice {background:var(--brand-dark);color:white}
 body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442d2a;font-size:13px}
 @media(min-width:761px){
@@ -144,9 +144,9 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 .sale-search label { display:grid; gap:4px; font-size:.875rem; font-weight:650; }
 .sale-search input { width:100%; font-size:16px; padding:.55em .75em; font-weight:400; }
 .sale-name-search { position:relative; min-width:0; }
-#product-matches { position:absolute; top:100%; inset-inline:0; z-index:2; max-height:min(34vh,250px); overflow:auto; list-style:none; margin:4px 0 0; padding:4px; border:1px solid #dec2d0; border-radius:10px; background:white; box-shadow:0 6px 22px #3b102d29; }
+#product-matches { position:absolute; top:100%; inset-inline:0; z-index:2; max-height:min(34vh,250px); overflow:auto; list-style:none; margin:4px 0 0; padding:4px; border:1px solid var(--line); border-radius:10px; background:white; box-shadow:0 6px 22px #3b102d29; }
 #product-matches li { padding:8px; border-radius:6px; cursor:pointer; }
-#product-matches li[aria-selected="true"], #product-matches li:hover { background:#f3dce9; }
+#product-matches li[aria-selected="true"], #product-matches li:hover { background:#f8dfd3; }
 #product-matches small { display:block; }
 .sale-search-help { display:flex; align-items:center; gap:8px; margin-top:6px; flex-shrink:0; }
 .sale-search-help button { padding:.25em .65em; font-size:.875rem; }
@@ -242,7 +242,7 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   gap:8px;
 }
 .pos.sale-landscape :is(.catalog,.order) {
-  background:rgba(255,253,250,var(--sale-panel-opacity,.57));
+  background:rgba(255,251,245,var(--sale-panel-opacity,.57));
   border-radius:12px;
 }
 #sales-background-settings { margin-bottom:14px; }
@@ -260,7 +260,7 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   gap:2px;
   text-align:left;
   background:var(--paper);
-  border:1px solid #dcc6d2;
+  border:1px solid var(--line);
   border-radius:8px;
 }
 .daily-cash-days button[aria-pressed="true"] { background:var(--brand);color:white;border-color:var(--brand); }
@@ -307,7 +307,7 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 .sale-category-menu:not([hidden]) {
   display:grid; flex:0 0 100%; min-width:0; gap:5px;
   grid-template-columns:repeat(auto-fit,minmax(min(100%,max(92px,calc((100% - 20px) / 5))),1fr));
-  max-height:min(230px,29dvh); overflow:auto; background:#fffdfa; border:1px solid #d8c4cf;
+  max-height:min(230px,29dvh); overflow:auto; background:#fffdfa; border:1px solid var(--line);
   border-radius:10px; padding:6px;
 }
 .sale-category-menu button {
@@ -363,11 +363,11 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 
 /* Bordô e cobre — conferência e pagamento da comanda. */
 .comanda-window, dialog:has(#table-tenders) {
-  --comanda-bordo:#581927;
-  --comanda-cobre:#ad7355;
-  --comanda-linha:#dec1b1;
-  --comanda-marfim:#fffbf5;
-  --comanda-pessego:#f5d5c8;
+  --comanda-bordo:var(--brand);
+  --comanda-cobre:var(--copper);
+  --comanda-linha:var(--line);
+  --comanda-marfim:var(--paper);
+  --comanda-pessego:var(--tint);
   --comanda-saldo:#f8dfd3;
   background:var(--comanda-marfim);
 }
@@ -440,3 +440,23 @@ dialog:has(#table-tenders) button.primary:disabled {
   .comanda-review .catalog #products { flex:1 1 175px; }
   .comanda-review .catalog > :is(.split,.sale-search,.sale-search-help,.sale-category-tabs,button) { flex-shrink:0; }
 }
+
+/* Contornos e ações da tela de vendas e da retaguarda. */
+.pos:not(.comanda-review) > :is(.catalog,.order),
+.pos:not(.comanda-review) #products .card,
+.dining-table,.daily-cash-card,.back .stat {
+  border:1px solid var(--copper);
+}
+.pos:not(.comanda-review) #products .card { background:var(--paper); }
+.pos:not(.comanda-review)[data-sale-layout] #products button.add {
+  background:var(--brand); color:white;
+}
+.pos:not(.comanda-review) .order .total {
+  background:#f8dfd3; color:var(--brand-dark);
+  padding-inline:10px; border-radius:8px;
+}
+.pos:not(.comanda-review) .order > .primary:disabled {
+  opacity:1; background:#80505a; color:white;
+}
+.receipt-dialog { background:var(--canvas); }
+@media print { .receipt-dialog .receipt-paper { background:#fff; color:#211815; } }
