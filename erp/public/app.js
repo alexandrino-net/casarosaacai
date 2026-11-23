@@ -1415,6 +1415,20 @@ function cashReport(kind){
   report.showModal();
 }
 
+const cashClock=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Bahia',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+function cashHours(state,day){
+  const shifts=[...state.shifts,...(state.cash?[state.cash]:[])].filter(shift=>{
+    const opened=receiptDate(shift.opened), closed=receiptDate(shift.closed);
+    return opened&&opened<=day&&(closed?day<=closed:day<=receiptDate(new Date()));
+  });
+  const format=value=>{
+    const date=receiptDate(value);
+    return date?(date===day?'':displayCashDate(date)+' às ')+cashClock.format(new Date(value)):'Em aberto';
+  };
+  return shifts.length?'<ul class="daily-cash-hours" aria-label="Horários do caixa">'+shifts.map(shift=>
+    '<li><span>Abertura <strong>'+esc(format(shift.opened))+'</strong></span><span>Fechamento <strong>'+esc(format(shift.closed))+'</strong></span></li>'
+  ).join('')+'</ul>':'<p class="daily-cash-hours">Sem horários de abertura e fechamento registrados para esta data.</p>';
+}
 function dailyCashSummary(state){
   const today=receiptDate(new Date());
   const yesterday=new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
@@ -1441,7 +1455,7 @@ function dailyCashSummary(state){
   return '<div class="daily-cash-layout"><aside class="daily-cash-history panel"><h2>Caixas por dia</h2>'+
     '<div class="daily-cash-days">'+history+'</div></aside>'+
     '<section class="daily-cash panel"><h2>'+(isToday?'Caixa de hoje':'Caixa de '+esc(displayCashDate(selected)))+
-    (!isToday?'<small>'+status+'</small>':'')+'</h2><div class="daily-cash-body">'+
+    (!isToday?'<small>'+status+'</small>':'')+'</h2><div class="daily-cash-body">'+cashHours(state,selected)+
     (isToday&&canView('sales')?'<button type="button" class="primary daily-cash-control" data-cash>'+backIcon('lock')+(state.cash?'Fechar caixa':'Abrir caixa')+'</button>':'')+
     '<div class="daily-cash-total daily-cash-total-row"><span class="cash-icon">'+backIcon('register')+'</span><span>Total do dia</span>'+
     '<button type="button" data-toggle-daily-total aria-controls="daily-total-value" aria-label="'+(showDailyTotal?'Ocultar total do dia':'Exibir total do dia')+
@@ -1477,7 +1491,8 @@ function back(){
   if(tab==='Configurações'){
     content='<h2>Layout do caixa</h2><p>Escolha o visual da tela de vendas neste navegador ou computador.</p>'+
       '<form id="sales-layout-settings">'+select('Layout da tela de vendas','layout',salesLayouts,salesLayout())+
-      '<button class="primary">Salvar layout</button></form>'+backgroundPanel();
+      '<button class="primary">Salvar layout</button></form>'+backgroundPanel()+
+      '<section><h2>Exportar dados</h2><button type="button" data-backup>Baixar backup completo (JSON)</button></section>';
   }else if(tab==='Restaurar base do PC'){
     content='<h2>Restaurar base do PC</h2><p>Esta ação substitui os dados operacionais online pelo arquivo do PC. O ERP guarda a base anterior e mantém os usuários e acessos.</p>'+
       '<form id="restore-pc"><label>Base oficial do PC<input name="base" type="file" accept=".json,application/json" required></label>'+
@@ -1490,7 +1505,7 @@ function back(){
   }else if(tab==='Impressora'){content=printerPanel();}
   else if(staffTabs.includes(tab)){content=staffPanel();}
   else if(tab==='Resumo'){
-    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button type="button" class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button><details class="cash-print-menu"><summary>Imprimir</summary><div><button data-cash-report="cash">Resumo do caixa</button><button data-cash-report="sales">Caixa + vendas</button><button data-cash-report="closing">Comprovante de fechamento</button></div></details><button data-backup>Exportar dados</button></div>`;
+    content='<div id="daily-cash-summary">'+dailyCashSummary(data)+'</div>'+`<div class="daily-cash-actions"><button type="button" class="primary" data-cash ${canView('sales')?'':'hidden'}>${data.cash?'Fechar caixa':'Abrir caixa'}</button><details class="cash-print-menu"><summary>Imprimir</summary><div><button data-cash-report="cash">Resumo do caixa</button><button data-cash-report="sales">Caixa + vendas</button><button data-cash-report="closing">Comprovante de fechamento</button></div></details></div>`;
   } else if(tab==='Histórico'){
     content=`<h2>Vendas</h2>${table(['Data','Itens','Pagamento','Cliente','Total','Comprovante'],[...data.sales].reverse().map(s=>[stamp(s.time),s.items.map(p=>p.qty+' × '+esc(p.name)).join('<br>'),s.payments?s.payments.map(p=>esc(p.method)+' '+money(p.amount)).join('<br>'):esc(s.method),esc(s.customer),money(s.total),
       s.partial?'':'<button data-reprint="'+esc(s.id)+'">Reimprimir</button>']))}

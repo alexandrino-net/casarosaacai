@@ -660,3 +660,7 @@ dialog:has(#table-tenders) button.primary:disabled {
   .cash-report-dialog .table { overflow:visible; }
   .cash-report-dialog tr { break-inside:avoid; }
 }
+
+.daily-cash-hours { list-style:none; margin:0 0 10px; padding:0; font-size:.82rem; }
+.daily-cash-hours li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 14px; padding:5px 0; }
+.daily-cash-hours li + li { border-top:1px solid var(--back-cobre); }
