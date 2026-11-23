@@ -576,3 +576,20 @@ dialog:has(#table-tenders) button.primary:disabled {
   .back-nav-group + .back-nav-group { margin-top:0; }
   .payable-totals { grid-template-columns:1fr; }
 }
+
+.back-cash-medium > h1 { font-size:clamp(23px,2.4vw,36px); margin-bottom:.6em; }
+.back-cash-medium .daily-cash-layout { gap:clamp(10px,1.2vw,18px); }
+.back-cash-medium .daily-cash-layout .panel > h2 {
+  font-size:clamp(17px,1.9vw,28px);
+  padding:6px 13px;
+}
+.back-cash-medium .daily-cash-body,.back-cash-medium .daily-cash-days { padding:clamp(8px,1.1vw,17px); }
+.back-cash-medium .daily-cash-days { gap:9px; }
+.back-cash-medium .daily-cash-days button { padding:8px; font-size:clamp(13px,1.2vw,18px); }
+.back-cash-medium .daily-cash-control { gap:9px; margin-bottom:12px; padding:.5em .8em; }
+.back-cash-medium .daily-cash-total { padding:clamp(10px,1.35vw,21px); font-size:clamp(14px,1.35vw,20px); }
+.back-cash-medium .daily-cash-total strong { font-size:clamp(20px,2.8vw,42px); }
+.back-cash-medium .daily-cash-cards { margin-top:14px; gap:8px; }
+.back-cash-medium .daily-cash-card { padding:4px 8px; font-size:clamp(13px,1.16vw,18px); }
+.back-cash-medium .daily-cash-card strong { font-size:1.1em; }
+.back-cash-medium .cash-icon { min-width:2.25em; padding:.35em; }

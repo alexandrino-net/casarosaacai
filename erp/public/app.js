@@ -1042,7 +1042,7 @@ function cash(){
     notice('Caixa fechado. Diferença '+money(counted-expected)+'.');
   },'Fechar caixa');
 }
-const names={fixos:'Custos fixos',impostos:'Impostos',customers:'Clientes',suppliers:'Fornecedores',products:'Produtos',pagar:'A pagar',receber:'A receber'};
+const names={Resumo:'Caixa',fixos:'Custos fixos',impostos:'Impostos',customers:'Clientes',suppliers:'Fornecedores',products:'Produtos',pagar:'A pagar',receber:'A receber'};
 const table=(headers,rows)=>rows.length?`<div class="table"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<p>Nenhum registro.</p>';
 const edit=(key,id)=>`<button data-edit="${key}" data-id="${id}">Editar</button>`;
 const partyName=b=>(b.kind==='pagar'?data.suppliers:data.customers).find(p=>p.id===b.party)?.name||'';
@@ -1481,8 +1481,8 @@ function back(){
   }
   const payable=['pagar','fixos','impostos'].includes(tab);
   const filters=payable?'<div class="tabs payable-filters">'+[['pagar','Todas'],['fixos','Custos fixos'],['impostos','Impostos']].map(([key,label])=>'<button data-tab="'+key+'" aria-pressed="'+(key===tab)+'">'+label+'</button>').join('')+'</div>':'';
-  const title=tab==='Resumo'?'Resumo do caixa':payable?'Contas a pagar':names[tab]||tab;
-  app.innerHTML=`<section class="back back-layout">${backNavigation(tabs)}<div class="back-main"><h1>${esc(title)}</h1>${filters}<div class="${tab==='Resumo'?'cash-summary-content':'panel'}">${content}</div></div></section>`;
+  const title=payable?'Contas a pagar':names[tab]||tab;
+  app.innerHTML=`<section class="back back-layout">${backNavigation(tabs)}<div class="back-main${tab==='Resumo'?' back-cash-medium':''}"><h1>${esc(title)}</h1>${filters}<div class="${tab==='Resumo'?'cash-summary-content':'panel'}">${content}</div></div></section>`;
 
   if(tab==='products'){
     $('#back-product-query').oninput=e=>{productQuery=e.target.value;renderBackProducts();};
