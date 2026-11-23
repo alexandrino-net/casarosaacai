@@ -360,3 +360,40 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   .table-payment-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .table-payment-row button { grid-column:1/-1; justify-self:end; }
 }
+
+/* Paleta da demonstração para conferência e pagamento da comanda. */
+.comanda-review, dialog:has(#table-tenders) {
+  --comanda-vinho:#750241;
+  --comanda-rosa:#ffcddf;
+  --comanda-rosa-suave:#f9d4e2;
+  --comanda-rosa-controle:#f5cedc;
+}
+.comanda-review :is(h1,h2), dialog:has(#table-tenders) h2 {
+  color:var(--comanda-vinho);
+}
+.comanda-review > :is(.catalog,.order) h2, .comanda-review-items th {
+  background:var(--comanda-rosa);
+  color:var(--comanda-vinho);
+}
+.comanda-review > :is(.catalog,.order) h2 {
+  padding:6px 10px; border-radius:8px;
+}
+.comanda-review .comanda-balance, #table-payment-summary {
+  background:var(--comanda-rosa-suave); color:var(--comanda-vinho);
+}
+.comanda-review button, dialog:has(#table-tenders) button {
+  background:#fff; color:var(--comanda-vinho); border:1px solid var(--comanda-vinho);
+}
+.comanda-review :is(button.active,button.primary,button.add,[data-table-receive="partial"]),
+dialog:has(#table-tenders) button.primary {
+  background:var(--comanda-vinho); color:#fff; border-color:var(--comanda-vinho);
+}
+.comanda-review button[data-review-minus] {
+  background:var(--comanda-rosa-controle); border-color:var(--comanda-rosa-controle);
+}
+.comanda-review button.comanda-danger {
+  background:#fff; color:#b00020; border-color:#b00020;
+}
+dialog:has(#table-tenders) button.primary:disabled {
+  background:#e4dce0; color:#52434b; border-color:#e4dce0; opacity:1;
+}
