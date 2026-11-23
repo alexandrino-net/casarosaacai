@@ -341,7 +341,7 @@ async function identifyBuyer(){
 }
 const tablePaid = t => sum(t.payments, 'amount');
 function tables() {
-  app.innerHTML='<section class="back"><h1>Mesas e comandas</h1><div class="table-map finance-table-map">'+data.tables.map(t=>{
+  app.innerHTML='<section class="table-landscape"><div class="back"><h1>Mesas e comandas</h1><div class="table-map finance-table-map">'+data.tables.map(t=>{
     const total=tableTotal(t), paid=tablePaid(t), balance=Math.max(0,total-paid);
     const settled=t.opened && total>0 && balance===0;
     const state=!t.opened?'free':settled?'settled':paid>0?'partial':'occupied';
@@ -358,7 +358,8 @@ function tables() {
         '% pago</span></span>'+(settled?'<span class="finance-table-note">Aguardando encerramento</span>':'')+
         (t.billRequestedAt&&!settled?'<span class="table-bill-request">Conta solicitada</span>':'')+
         '<span class="finance-table-action">Conferir</span>':'')+'</button>';
-  }).join('')+'</div></section>';
+  }).join('')+'</div></div></section>';
+  paintSalesBackground();
 }
 function requestTableBill(){
   const expected=tableOrder();
@@ -650,16 +651,18 @@ function backgroundSettings(){
   }catch{return {mode:'rotate',custom:[],transparency:defaultPanelTransparency};}
 }
 function paintSalesBackground(advance=false){
-  const panel=$('.pos');
-  if(!panel)return;
+  const panels=document.querySelectorAll('.pos, .table-landscape');
+  if(!panels.length)return;
   const settings=backgroundSettings();
-  panel.style.setProperty('--sale-panel-opacity',(100-settings.transparency)/100);
   const photos=[...builtInBackgrounds,...settings.custom];
-  panel.classList.toggle('sale-landscape',settings.mode!=='off');
-  if(settings.mode==='off'){panel.style.removeProperty('--sale-landscape');return;}
   if(advance&&settings.mode==='rotate')backgroundIndex=(backgroundIndex+1)%photos.length;
   const photo=settings.mode==='fixed'?(photos.find(p=>p.id===settings.fixed)||photos[0]):photos[backgroundIndex%photos.length];
-  panel.style.setProperty('--sale-landscape','url("'+photo.src+'")');
+  for(const panel of panels){
+    panel.style.setProperty('--sale-panel-opacity',(100-settings.transparency)/100);
+    panel.classList.toggle('sale-landscape',settings.mode!=='off');
+    if(settings.mode==='off')panel.style.removeProperty('--sale-landscape');
+    else panel.style.setProperty('--sale-landscape','url("'+photo.src+'")');
+  }
 }
 setInterval(()=>paintSalesBackground(true),180000);
 function backgroundPanel(){
