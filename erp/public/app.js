@@ -27,8 +27,14 @@ function selectComanda(id){
 }
 function notice(message) {
   $('#notice').textContent=message;
+  const tableNotice=$('#comanda-notice');
+  if(tableNotice)tableNotice.textContent=message;
   clearTimeout(timer);
-  timer=setTimeout(()=>$('#notice').textContent='',6000);
+  timer=setTimeout(()=>{
+    $('#notice').textContent='';
+    const tableNotice=$('#comanda-notice');
+    if(tableNotice)tableNotice.textContent='';
+  },6000);
 }
 function prepareState(state) {
   state.tables ??= Array.from({length:10}, (_,i)=>({id:String(i+1),name:'',opened:null,items:[],payments:[]}));
@@ -292,8 +298,14 @@ function updateCatalog(){
     more.classList.toggle('active',Boolean(active));
     more.textContent=active?'Mais · '+active.textContent:'Mais categorias';
   }
+  const draft=selectedTable?order():[];
+  const pending=new Map();
+  for(const item of draft){
+    const id=item.productId||item.id;
+    pending.set(id,(pending.get(id)||0)+item.qty);
+  }
   const products=filter ? data.products.filter(p=>[p.code,p.barcode].some(code=>code?.startsWith(filter))) : frontProducts(data,category);
-  $('#products').innerHTML=products.map(p=>{const photo=productPhoto(p);return `<article class="card">${photo?`<img src="${photo}" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${(p.variable?'Preço na venda':money(p.price)+(p.unit==='kg'?' / kg':''))}</div><button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${p.id}">+</button></div>${!filter&&canView('back')?frontProductButton(p):''}</article>`;}).join('')||'Nenhum produto encontrado.';
+  $('#products').innerHTML=products.map(p=>{const photo=productPhoto(p);return `<article class="card">${photo?`<img src="${photo}" alt="">`:'<div class="placeholder">🍧</div>'}<div class="details"><div><strong>${esc(p.name)}</strong><br>${(p.variable?'Preço na venda':money(p.price)+(p.unit==='kg'?' / kg':''))}</div>${selectedTable?`<div class="qty"><button data-review-minus="${esc(p.id)}" aria-label="Diminuir ${esc(p.name)}" ${pending.get(p.id)?'':'disabled'}>−</button><b>${(pending.get(p.id)||0).toLocaleString('pt-BR')}</b>`:''}<button class="add" aria-label="Adicionar ${esc(p.name)}" data-add="${esc(p.id)}">+</button>${selectedTable?'</div>':''}</div>${!filter&&canView('back')?frontProductButton(p):''}</article>`;}).join('')||'Nenhum produto encontrado.';
 }
 function tableOrder() {
   return data.tables.find(t => t.id === selectedTable);
@@ -370,56 +382,123 @@ function addTableItems() {
     cart = {};
   }, 'Lançar na comanda');
 }
-function receiveTable() {
-  const t = tableOrder();
-  const balance = tableTotal(t)-tablePaid(t), shift=data.cash;
-  if (order().length) { notice('Salve os novos itens antes de receber.'); return; }
-  if (!data.cash) { cash(); return; }
-  if (balance <= 0) { notice('Mesa sem saldo pendente.'); return; }
-  fields('Receber da mesa ' + t.id,
-    '<p>Saldo ' + money(balance) + '</p>' +
-    amount('<span id="table-payment-label">Valor do pagamento</span>','amount',(balance/100).toFixed(2),'.01') +
-    paymentChoices(splitMethods)+'<div id="payment-extra"></div>', async v => {
-      const entered=cents(v.amount);
-      const inCash=v.method==='Dinheiro';
-      const value=inCash?Math.min(entered,balance):entered;
-      if (!Number.isSafeInteger(entered) || value <= 0 || value > balance)
-        throw Error('Informe um valor entre R$ 0,01 e o saldo da mesa.');
-      const parts=tenderParts(v,value);
-      const change=inCash?entered-value:0;
-      await save(next => {
+function allocateTablePayment(target, parts){
+  if(!Number.isSafeInteger(target)||target<=0)throw Error('Informe um valor de pagamento válido.');
+  if(parts.some(p=>!methods.includes(p.method)||!Number.isSafeInteger(p.amount)||p.amount<=0))
+    throw Error('Informe o valor de cada meio de pagamento.');
+  if(new Set(parts.map(p=>p.method)).size!==parts.length)throw Error('Use cada meio de pagamento uma vez.');
+  const cashPart=parts.find(p=>p.method==='Dinheiro');
+  const other=sum(parts.filter(p=>p!==cashPart),'amount');
+  if(other>target || (cashPart && other===target))throw Error('Os valores passam do total do pagamento.');
+  const change=cashPart?Math.max(0,cashPart.amount-(target-other)):0;
+  const payments=parts.map(p=>p===cashPart?{...p,amount:p.amount-change}:p);
+  return {payments,remaining:target-sum(payments,'amount'),change,given:cashPart?.amount};
+}
+function receiveTable(partial=false){
+  const t=tableOrder(), balance=tableTotal(t)-tablePaid(t), shift=data.cash;
+  if(order().length){notice('Salve os novos itens antes de receber.');return;}
+  if(!shift){cash();return;}
+  if(balance<=0){notice('Mesa sem saldo pendente.');return;}
+  const customers=[['','Selecione o cliente'],...data.customers.map(c=>[c.id,c.name])];
+  const row=(method='',value='')=>'<div class="table-payment-row">'+
+    select('Meio de pagamento','method',[['','Selecione'],...methods.map(m=>[m,m==='A prazo'?'Prazo / Fiado':m])],method)+
+    amount('Valor (R$)','part',value,'.01')+'<button type="button" data-remove-tender>Remover</button></div>';
+  fields(partial?'Pagamento parcial':'Pagamento',
+    '<p>Mesa '+esc(t.id)+(t.name?' · '+esc(t.name):'')+' · Saldo da comanda <strong>'+money(balance)+'</strong></p>'+
+    (partial?amount('Valor a abater agora','target','','.01'):'')+
+    '<div id="table-tenders">'+row('Pix',partial?'':(balance/100).toFixed(2))+'</div>'+
+    '<button id="add-table-tender" type="button">Adicionar meio de pagamento</button>'+
+    '<div id="table-credit" hidden>'+select('Cliente cadastrado','party',customers,'')+
+    input('Vencimento','due','','date')+'</div><p id="table-payment-summary" role="status"></p>',async()=>{
+      const {target,parts}=readPayment();
+      const {payments,remaining,change,given}=allocateTablePayment(target,parts);
+      if(remaining!==0)throw Error('Distribua todo o valor antes de confirmar.');
+      const credit=payments.find(p=>p.method==='A prazo');
+      const received=payments.filter(p=>p!==credit);
+      await save(next=>{
         checkShift(next,shift);
-        const table = sameTable(next,t);
-        if (tablePaid(table)!==tablePaid(t) || balance!==tableTotal(table)-tablePaid(table))
-          throw review('A mesa recebeu outro pagamento. Confira o saldo atualizado.');
-        const cashDetails=inCash?{given:entered,change}:{};
-        const receipt={id:operationId,amount:value,method:v.method,time:date(),shift:next.cash.id,...cashDetails};
-        table.payments.push(...parts.map(part=>({...receipt,...part})));
-        next.sales.push({id:receipt.id,shift:receipt.shift,time:receipt.time,items:[],
-          total:value,payments:parts,method:v.method,customer:table.name,table:table.id,partial:true,...cashDetails});
+        const current=sameTable(next,t);
+        if(tablePaid(current)!==tablePaid(t)||tableTotal(current)-tablePaid(current)!==balance)
+          throw review('A comanda mudou. Confira o saldo atualizado.');
+        const customer=credit?next.customers.find(c=>c.id===party.value):null;
+        if(credit)creditRules.check(next,customer,credit.amount,due.value);
+        const time=date(), shiftId=next.cash.id;
+        for(const [group,creditGroup] of [[received,false],[[credit],true]]){
+          if(creditGroup?!credit:!group.length)continue;
+          const id=creditGroup&&received.length?operationId+'-prazo':operationId;
+          const method=creditGroup?'A prazo':group.length===1?group[0].method:'Dividido';
+          const total=sum(group,'amount');
+          const cashDetails=!creditGroup&&given!==undefined?{given,change}:{};
+          const customerDetails=creditGroup?{customerId:customer.id,due:due.value}:{};
+          current.payments.push(...group.map(part=>({id,time,shift:shiftId,...part,...cashDetails,...customerDetails})));
+          next.sales.push({id,time,shift:shiftId,items:[],table:current.id,customer:creditGroup?customer.name:current.name,
+            partial:true,method,total,payments:group,...cashDetails,...customerDetails});
+          if(creditGroup)next.bills.push({id:crypto.randomUUID(),kind:'receber',saleId:id,party:customer.id,
+            description:'Venda '+id.slice(0,8),amount:total,due:due.value,paid:null});
+        }
       },true);
-      notice(change?'Pagamento registrado. Troco: '+money(change):'Pagamento registrado no caixa.');
-    },'Registrar pagamento');
-  const method=dialog.querySelector('[name=method]');
-  const amountField=dialog.querySelector('[name=amount]');
-  const updateCashPreview=()=>{
-    const entered=cents(amountField.value);
-    if(!Number.isSafeInteger(entered)||entered<=0){
-      $('#table-cash-preview').textContent='';
-      return;
-    }
-    const applied=Math.min(entered,balance);
-    $('#table-cash-preview').textContent='Abatimento: '+money(applied)+' · Troco: '+money(entered-applied);
+      notice(change?'Pagamento registrado. Troco: '+money(change):'Pagamento registrado.');
+    },'Confirmar pagamento');
+  const list=$('#table-tenders'), party=dialog.querySelector('[name=party]'), due=dialog.querySelector('[name=due]');
+  const confirm=dialog.querySelector('button.primary'), summary=$('#table-payment-summary');
+  const targetField=dialog.querySelector('[name=target]');
+  const readPayment=()=>{
+    const target=partial?cents(targetField.value):balance;
+    if(target>balance || (partial&&target===balance))throw Error('Use Pagamento para quitar todo o saldo.');
+    return {target,parts:[...list.querySelectorAll('.table-payment-row')].map(el=>({
+      method:el.querySelector('[name=method]').value,amount:cents(el.querySelector('[name=part]').value)
+    }))};
   };
-  method.onchange=()=>{
-    const inCash=method.value==='Dinheiro';
-    $('#table-payment-label').textContent=inCash?'Valor recebido em dinheiro':'Valor do pagamento';
-    $('#payment-extra').innerHTML=inCash?'<p id="table-cash-preview" role="status"></p>':
-      method.value==='Dividido'?splitFields():'';
-    amountField.oninput=inCash?updateCashPreview:null;
-    if(inCash)updateCashPreview();
+  const update=()=>{
+    const hasCredit=[...list.querySelectorAll('select')].some(el=>el.value==='A prazo');
+    $('#table-credit').hidden=!hasCredit;
+    party.disabled=due.disabled=!hasCredit;
+    const rows=[...list.children];
+    for(const el of rows)el.querySelector('[data-remove-tender]').hidden=rows.length===1;
+    $('#add-table-tender').disabled=rows.length>=methods.length;
+    confirm.disabled=true;
+    try{
+      const {target,parts}=readPayment();
+      const filled=parts.filter(p=>p.method&&p.amount>0);
+      const {remaining,change}=allocateTablePayment(target,filled);
+      summary.textContent='Valor distribuído: '+money(target-remaining)+' · Falta distribuir: '+money(remaining)+
+        (partial?' · Saldo após pagamento: '+money(balance-target):'')+(change?' · Troco: '+money(change):'');
+      if(remaining||filled.length!==parts.length)return;
+      if(hasCredit)creditRules.check(data,data.customers.find(c=>c.id===party.value),filled.find(p=>p.method==='A prazo').amount,due.value);
+      confirm.disabled=false;
+    }catch(error){summary.textContent=error.message;}
   };
-  method.onchange();
+  due.min=creditRules.today();
+  party.onchange=()=>{
+    try{const agreed=creditRules.nextDue(data.customers.find(c=>c.id===party.value));due.value=agreed;due.readOnly=Boolean(agreed);}
+    catch(error){notice(error.message);due.value='';due.readOnly=false;}
+    update();
+  };
+  dialog.querySelector('form').addEventListener('input',update);
+  dialog.querySelector('form').addEventListener('change',update);
+  list.onclick=event=>{
+    const button=event.target.closest('[data-remove-tender]');
+    if(button&&list.children.length>1){button.closest('.table-payment-row').remove();update();}
+  };
+  $('#add-table-tender').onclick=()=>{list.insertAdjacentHTML('beforeend',row());update();list.lastElementChild.querySelector('select').focus();};
+  update();
+}
+function moveTable(){
+  const source=tableOrder();
+  const free=data.tables.filter(t=>t.id!==source.id&&!t.opened);
+  if(!free.length){notice('Nenhuma mesa livre para receber a comanda.');return;}
+  fields('Mudar mesa',select('Mesa de destino','destination',free.map(t=>[t.id,'Mesa '+t.id]),free[0].id),async v=>{
+    const target=free.find(t=>t.id===v.destination);
+    if(!target)throw Error('Selecione uma mesa livre.');
+    await save(next=>{
+      const from=sameTable(next,source), to=sameTable(next,target);
+      Object.assign(to,{...from,id:to.id});
+      Object.assign(from,{name:'',opened:null,items:[],payments:[],service:false});
+    },true);
+    selectedTable=comandaTarget=target.id;
+    selectedOpening=source.opened;
+    notice('Comanda transferida para a mesa '+target.id+'.');
+  },'Mudar mesa');
 }
 function closeTable() {
   const t=tableOrder();
@@ -641,20 +720,51 @@ function sales(){
   <aside class="order"><h2>${comanda?'Só comanda':'Pedido atual'}</h2>${comanda?select('Comanda','sale-comanda',[['','Escolha a mesa'],...data.tables.map(t=>[t.id,'Mesa '+t.id+' · '+(t.opened?(t.name||'Ocupada'):'Livre')])],comandaTarget).replace('name="sale-comanda"','id="sale-comanda" name="sale-comanda"'):''}${comanda?'':'<button data-identify>'+esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')+'</button>'}<div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!lines.length?'disabled':(!comanda&&!total?'disabled':'')}>${comanda?'Lançar na comanda':'Receber pagamento'}</button><div class="payments" ${comanda?'hidden':''}>${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div></aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
-    $('.catalog h1').textContent = 'Mesa ' + t.id + (t.name ? ' — ' + t.name : '');
-    $('.order h2').textContent = 'Comanda · Mesa ' + t.id;
-    const panel=document.createElement('section');
-    panel.className='panel table-balance';
-    panel.innerHTML='<button data-rename>Editar nome</button> <button data-view="tables">Ver mesas</button>' +
-      '<h3>Comanda salva</h3><div class="saved-items">' + t.items.map((i,index)=>'<p>'+qtyLabel(i)+' × '+esc(i.name)+' — '+money(i.total)+' <button data-remove-saved="'+index+'" aria-label="Retirar uma unidade de '+esc(i.name)+'">−</button></p>').join('') + '</div>' +
-      '<button data-print-order>Espelho da comanda</button> <button data-fee aria-pressed="'+Boolean(t.service)+'">'+(t.service?'Retirar':'Incluir')+' 10% de serviço</button>'+
-      '<p>Consumo <strong>'+money(sum(t.items,'total'))+'</strong> · Serviço <strong>'+money(serviceCharge(t.items,t.service))+'</strong> · Pago <strong>'+money(tablePaid(t))+'</strong></p>' +
-      '<p>Saldo <strong>'+money(tableTotal(t)-tablePaid(t))+'</strong></p>' +
-      '<button data-table-receive>Pagamento parcial / total</button> <button data-table-close>Encerrar mesa</button> <button data-table-cancel>Cancelar comanda</button>';
-    $('.order').appendChild(panel);
-    $('.pos').classList.add('table-mode');
+    const catalog=$('.catalog'), orderPanel=$('.order');
+    const header=document.createElement('div');
+    header.className='comanda-review-header';
+    header.innerHTML='<div><h1 id="comanda-title">Conferir comanda</h1><p>Mesa '+esc(t.id)+(t.name?' · '+esc(t.name):'')+'</p></div>'+
+      '<button type="button" data-view="tables" aria-label="Voltar às mesas">×</button>';
+    $('.pos').prepend(header);
+    catalog.querySelector('.split').innerHTML='<h2>Catálogo</h2>';
+    catalog.querySelector('.sale-modes').hidden=true;
+    catalog.insertAdjacentHTML('beforeend','<button type="button" data-pay="" '+(lines.length?'':'disabled')+'>Salvar itens</button>'+
+      (lines.length?'<p>Novos itens: '+money(total)+'</p>':''));
+    orderPanel.innerHTML='<h2>Itens da comanda</h2><div class="comanda-review-items">'+table(['Qtd.','Item','Total','Ação'],
+      t.items.map((item,index)=>[qtyLabel(item),esc(item.name),money(item.total),
+        '<button data-remove-saved="'+index+'" aria-label="Retirar '+esc(item.name)+'">Retirar</button>']))+'</div>'+
+      '<p>Consumo <strong>'+money(sum(t.items,'total'))+'</strong> · Serviço <strong>'+money(serviceCharge(t.items,t.service))+'</strong> · Pago <strong>'+money(tablePaid(t))+'</strong></p>'+
+      '<div class="split comanda-balance"><strong>Saldo</strong><strong>'+money(tableTotal(t)-tablePaid(t))+'</strong></div>';
+    const actions=document.createElement('div');
+    actions.className='comanda-review-actions';
+    actions.innerHTML='<button data-rename>Editar nome</button><button data-move-table>Mudar mesa</button>'+
+      '<button data-print-order>Espelho da comanda</button><button data-fee aria-pressed="'+Boolean(t.service)+'">'+(t.service?'Retirar':'Incluir')+' 10%</button>'+
+      '<button data-table-receive="partial">Pagamento parcial</button><button class="comanda-danger" data-table-cancel>Cancelar comanda</button>';
+    const footer=document.createElement('div');
+    footer.className='comanda-review-footer';
+    footer.innerHTML='<button data-view="tables">Voltar</button>'+
+      (tableTotal(t)>tablePaid(t)?'<button class="primary" data-table-receive="full">Pagamento</button>':'<button class="primary" data-table-close>Encerrar mesa</button>');
+    const pos=$('.pos');
+    pos.append(actions,footer);
+    const status=document.createElement('p');
+    status.id='comanda-notice';
+    status.setAttribute('role','status');
+    status.textContent=$('#notice').textContent;
+    pos.append(status);
+    pos.classList.add('table-mode','comanda-review');
+    const reviewWindow=document.createElement('dialog');
+    reviewWindow.className='comanda-window';
+    reviewWindow.setAttribute('aria-labelledby','comanda-title');
+    reviewWindow.addEventListener('cancel',event=>{
+      event.preventDefault();
+      if(!busy)footer.querySelector('[data-view]').click();
+    });
+    tables();
+    reviewWindow.append(pos);
+    app.append(reviewWindow);
+    reviewWindow.showModal();
   }
-  if(comanda)$('#sale-comanda').onchange=event=>selectComanda(event.target.value);
+  if(comanda&&!selectedTable)$('#sale-comanda').onchange=event=>selectComanda(event.target.value);
   $('#search').onkeydown=e=>{
     if(e.key!=='Enter' || !e.target.value.trim()) return;
     e.preventDefault();entry(e.target.value);
@@ -863,10 +973,10 @@ document.addEventListener('keydown',e=>{
   if(!canView('sales'))return;
   const menuOpen=dialog.open && dialog.querySelector('#function-title');
   const shortcut=letterFunctions[e.key.toLowerCase()];
-  if(shortcut && e.target.id!=='product-name' && (view==='sales' || menuOpen) && (!document.querySelector('dialog[open]')||menuOpen)){
+  if(shortcut && e.target.id!=='product-name' && (view==='sales' || menuOpen) && (!document.querySelector('dialog[open]:not(.comanda-window)')||menuOpen)){
     e.preventDefault();if(menuOpen)dialog.close();shortcut.run();return;
   }
-  if(e.altKey || e.shiftKey || (document.querySelector('dialog[open]') && !menuOpen))return;
+  if(e.altKey || e.shiftKey || (document.querySelector('dialog[open]:not(.comanda-window)') && !menuOpen))return;
   if(e.key==='F7'){e.preventDefault();if(menuOpen)dialog.close();identifyBuyer();return;}
   if(e.key==='F8'){e.preventDefault();if(menuOpen)dialog.close();receiveCredit();return;}
   const fn=cashFunctions.find(f=>f.key===e.key);
@@ -1530,11 +1640,13 @@ document.addEventListener('click',e=>{
   if(d.collect!==undefined){if(dialog.open)dialog.close();receiveCredit();return;}
   if(d.table)openTable(d.table);
   if(d.printOrder!==undefined)printOrder();
-  if(d.tableReceive!==undefined)receiveTable();
+  if(d.tableReceive!==undefined)receiveTable(d.tableReceive==='partial');
+  if(d.moveTable!==undefined)moveTable();
   if(d.tableClose!==undefined)closeTable();
   if(d.tableCancel!==undefined)cancelTable();
   if(d.rename!==undefined)fields('Nome da mesa',input('Nome','name',tableOrder().name,'text','maxlength="100"'),async v=>{
-    await save(next=>next.tables.find(t=>t.id===selectedTable).name=v.name.trim());
+    const expected=tableOrder();
+    await save(next=>sameTable(next,expected).name=v.name.trim());
   });
   if(d.tab){
     tab=d.tab;render();
@@ -1546,6 +1658,10 @@ document.addEventListener('click',e=>{
   if(d.entry)employeeEntry(d.entry);
   if(d.category){category=d.category;search='';render();}
   if(d.add)addProduct(d.add);
+  if(d.reviewMinus){
+    const item=order().reverse().find(i=>(i.productId||i.id)===d.reviewMinus);
+    if(item){cart[item.id]=item.unit==='kg'?0:Math.max(0,cart[item.id]-1);render();}
+  }
   if(d.minus)removeItem('cart:'+d.minus);
   if(d.removeSaved!==undefined)removeItem('saved:'+d.removeSaved);
   if(d.fee!==undefined)toggleService();
@@ -1592,8 +1708,9 @@ async function refreshTables(){
     if(!canRefreshTables() || current.rev<=data.rev)return;
     const tableChanged=JSON.stringify(current.tables)!==JSON.stringify(data.tables);
     const cashChanged=Boolean(current.cash)!==Boolean(data.cash);
+    const productsChanged=view==='sales'&&JSON.stringify(current.products)!==JSON.stringify(data.products);
     data=current;
-    if(view==='sales' || tableChanged || cashChanged)render();
+    if(tableChanged || cashChanged || (view==='sales'&&productsChanged))render();
   }catch{ /* The next refresh retries. */ }
   finally{refreshingTables=false;}
 }

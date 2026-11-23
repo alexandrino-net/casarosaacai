@@ -313,3 +313,50 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 .sale-category-menu button {
   min-height:44px; min-width:0; padding:8px; text-align:left; overflow-wrap:anywhere;
 }
+
+.comanda-window {
+  width:min(1100px, calc(100% - 24px)); max-width:none; max-height:94dvh;
+  padding:0; border:1px solid var(--line); border-radius:16px; overflow:auto;
+}
+.pos.comanda-review, .pos.comanda-review.sale-landscape {
+  width:100%; height:auto; min-height:0; max-height:none; margin:0; padding:16px;
+  display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:12px;
+  background:var(--paper); border:0; box-shadow:none;
+}
+.comanda-review > .catalog, .comanda-review > .order {
+  min-height:0; min-width:0; border:1px solid var(--line); border-radius:10px;
+  background:var(--paper); padding:12px;
+}
+.comanda-review :is(h1,h2,p) { margin:0 0 8px; }
+.comanda-review .sale-modes[hidden] { display:none; }
+.comanda-review-header,.comanda-review-actions,.comanda-review-footer,#comanda-notice { grid-column:1/-1; }
+.comanda-review-header,.comanda-review-footer { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.comanda-review-footer { border-top:1px solid var(--line); padding-top:10px; }
+.comanda-review-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.comanda-review button { min-height:40px; }
+.comanda-review .comanda-danger { color:#8d1738; border:1px solid currentColor; background:transparent; }
+.comanda-review .comanda-balance { background:var(--tint); padding:10px 12px; border-radius:8px; }
+.comanda-review-items { overflow:auto; max-height:32dvh; margin-bottom:8px; }
+.comanda-review .catalog #products { display:grid; grid-template-columns:1fr; max-height:33dvh; margin-bottom:8px; }
+.comanda-review #products .card { display:grid; grid-template-columns:48px minmax(0,1fr); }
+.comanda-review #products .card img,.comanda-review #products .placeholder { width:48px; height:48px; object-fit:cover; }
+.comanda-review #products .details { display:flex; justify-content:space-between; min-width:0; }
+.comanda-review #products .qty { margin:0; gap:4px; }
+.comanda-review #products .qty button { width:36px; padding:0; }
+.comanda-review #products .product-position { grid-column:1/-1; }
+#comanda-notice:empty { display:none; }
+#comanda-notice { padding:8px; background:var(--tint); border-radius:8px; }
+.table-payment-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(100px,1fr) auto; gap:8px; align-items:end; margin-bottom:8px; }
+.table-payment-row label { min-width:0; margin:0; }
+.table-payment-row :is(select,input) { width:100%; }
+.table-payment-row button { min-height:40px; }
+#table-payment-summary { padding:10px; background:var(--tint); border-radius:8px; }
+@media(max-width:760px){
+  .pos.comanda-review, .pos.comanda-review.sale-landscape { grid-template-columns:minmax(0,1fr); padding:10px; }
+  .comanda-review .order { grid-row:2; }
+  .comanda-review-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:440px){
+  .table-payment-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .table-payment-row button { grid-column:1/-1; justify-self:end; }
+}

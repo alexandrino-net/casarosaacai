@@ -41,7 +41,7 @@ const creditRules = (() => {
     const legacy=new Set(bills.filter(b=>!b.saleId).map(b=>b.description));
     let latest=0;
     for(const sale of state.sales){
-      if(sale.partial) continue;
+      if(sale.partial && sale.method!=='A prazo') continue;
       const matches=sale.customerId ? sale.customerId===party :
         linked.has(sale.id) || (sale.method==='A prazo' && legacy.has('Venda '+sale.id.slice(0,8)));
       const time=Date.parse(sale.time);
