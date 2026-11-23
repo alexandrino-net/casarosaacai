@@ -466,3 +466,21 @@ dialog:has(#table-tenders) button.primary:disabled {
 }
 .receipt-dialog { background:var(--canvas); }
 @media print { .receipt-dialog .receipt-paper { background:#fff; color:#211815; } }
+
+/* A seta azul abre as categorias que ficam fora da barra principal. */
+.sale-category-tabs > button.sale-more-categories {
+  display:inline-grid; place-items:center; flex:0 0 44px;
+  width:44px; height:44px; padding:0; border:1px solid #0644da;
+  border-radius:10px; background:#0644da; color:white;
+}
+.sale-category-tabs > button.sale-more-categories::before {
+  content:""; width:10px; height:10px;
+  border:solid currentColor; border-width:0 3px 3px 0; border-radius:1px;
+  transform:translateY(-2px) rotate(45deg);
+}
+.sale-category-tabs > button.sale-more-categories[aria-expanded="true"]::before {
+  transform:translateY(2px) rotate(225deg);
+}
+.sale-category-tabs > button.sale-more-categories.active {
+  box-shadow:inset 0 0 0 2px #b8d4ff;
+}

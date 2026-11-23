@@ -296,7 +296,9 @@ function updateCatalog(){
   if(more){
     const active=$('#sale-category-menu button.active');
     more.classList.toggle('active',Boolean(active));
-    more.textContent=active?'Mais · '+active.textContent:'Mais categorias';
+    const label=active?'Mais categorias · '+active.textContent:'Mais categorias';
+    more.setAttribute('aria-label',label);
+    more.title=label;
   }
   const draft=selectedTable?order():[];
   const pending=new Map();
@@ -711,7 +713,7 @@ function saleCategoryButtons(categories){
   const names=categories.map(({name})=>name);
   const favorites=categories.filter(c=>favoriteSaleCategories.includes(c.renamedDefault||c.name)).map(c=>c.name);
   const others=names.filter(name=>!favorites.includes(name));
-  const toggle=others.length?'<button type="button" class="sale-more-categories" aria-controls="sale-category-menu" aria-expanded="false">Mais categorias</button>':'';
+  const toggle=others.length?'<button type="button" class="sale-more-categories" aria-controls="sale-category-menu" aria-expanded="false" aria-label="Mais categorias" title="Mais categorias"></button>':'';
   const menu=others.length?'<div id="sale-category-menu" class="sale-category-menu" hidden>'+others.map(button).join('')+'</div>':'';
   return '<nav class="sale-category-tabs" aria-label="Categorias dos produtos">'+favorites.map(button).join('')+toggle+menu+'</nav>';
 }
