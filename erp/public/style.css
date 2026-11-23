@@ -609,3 +609,30 @@ dialog:has(#table-tenders) button.primary:disabled {
 .open-comanda-heading small { display:block; }
 .open-comanda-info { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; background:#fae6db; padding:5px 6px; border-radius:6px; }
 .open-comanda-card button { width:100%; padding:5px 8px; }
+
+.finance-table-map { gap:12px; }
+.dining-table.finance-table {
+  --table-state:#701b33; --table-tint:#faedea;
+  background:#fffaf4; border:1px solid #b46a43; border-radius:12px;
+  padding:10px; min-height:0; gap:6px; text-align:center;
+}
+.finance-table.free { --table-state:#165b32; --table-tint:#e2f0d6; }
+.finance-table:is(.partial,.settled) { --table-state:#8c5100; --table-tint:#fff1db; }
+.finance-table-number {
+  border:2px solid var(--table-state); color:var(--table-state); background:var(--table-tint);
+  border-radius:9px; padding:2px 11px; font-size:1.2rem;
+}
+.finance-table .finance-table-art { width: min(100%,136px); height:68px; object-fit:contain; }
+.finance-table .table-status {
+  width:100%; padding:4px 3px; border-radius:7px; color:#fff; background:var(--table-state);
+  font-size:.82rem;
+}
+.finance-table.free .table-status { color:var(--table-state); background:var(--table-tint); }
+.finance-table-amounts { display:grid; width:100%; gap:3px; text-align:left; font-size:.83rem; }
+.finance-table-amounts > span { display:flex; flex-wrap:wrap; justify-content:space-between; gap:3px; }
+.finance-table-balance { border-top:1px solid #e3bba7; padding-top:4px; color:#68142a; font-weight:700; }
+.finance-table-progress { display:flex; align-items:center; width:100%; gap:6px; font-size:.72rem; white-space:nowrap; }
+.finance-table-progress > span:first-child { flex:1; height:9px; background:#ddd5cf; border-radius:10px; overflow:hidden; }
+.finance-table-progress i { display:block; height:100%; background:#21864b; border-radius:inherit; }
+.finance-table-note { background:#ffe2ab; border-radius:5px; padding:3px; color:#583509; font-size:.7rem; }
+.finance-table-action { margin-top:auto; width:100%; padding:5px 4px; border-radius:7px; color:#fff; background:#701b33; font-weight:700; }

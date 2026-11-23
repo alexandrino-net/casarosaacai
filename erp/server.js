@@ -334,6 +334,7 @@ let state = fs.existsSync(database) ? JSON.parse(fs.readFileSync(database, 'utf8
 const staff=require('./staff')(pool,folder,()=>state.sales);
 const creditRules=require('./public/credit');
 const files = {
+  '/img/mesa-praiana.webp': ['img/mesa-praiana.webp', 'image/webp'],
   '/credit.js':['credit.js','text/javascript'],
   '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']
 };

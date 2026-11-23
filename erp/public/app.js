@@ -341,22 +341,23 @@ async function identifyBuyer(){
 }
 const tablePaid = t => sum(t.payments, 'amount');
 function tables() {
-  app.innerHTML = '<section class="back"><h1>Mesas e comandas</h1><div class="table-map">' +
-    data.tables.map(t => {
-      const paid = tablePaid(t);
-      const status = !t.opened ? 'Livre' : paid > 0 ? 'Pagamento parcial' : 'Ocupada';
-      const state = !t.opened ? 'free' : paid > 0 ? 'partial' : 'occupied';
-      return '<button class="dining-table ' + state + '" data-table="' + t.id +
-        '" aria-label="Mesa ' + esc(t.id) + ', ' + esc(t.name || status) + '">' +
-        '<span class="table-drawing" aria-hidden="true"><span class="chair top"></span>' +
-        '<span class="chair right"></span><span class="chair bottom"></span>' +
-        '<span class="chair left"></span><span class="table-top">' +
-        esc(t.id.padStart(2,'0')) + '</span></span>' +
-        '<strong>Mesa ' + esc(t.id.padStart(2,'0')) + '</strong>' +
-        '<span class="table-name">' + esc(t.name || 'Sem nome') + '</span>' +
-        '<span class="table-status">' + status + '</span>' +
-        (t.opened ? '<span>Saldo ' + money(tableTotal(t)-paid) + '</span>' : '') + '</button>';
-    }).join('') + '</div></section>';
+  app.innerHTML='<section class="back"><h1>Mesas e comandas</h1><div class="table-map finance-table-map">'+data.tables.map(t=>{
+    const total=tableTotal(t), paid=tablePaid(t), balance=Math.max(0,total-paid);
+    const settled=t.opened && total>0 && balance===0;
+    const state=!t.opened?'free':settled?'settled':paid>0?'partial':'occupied';
+    const status={free:'Livre',settled:'Quitada',partial:'Pagamento parcial',occupied:'Ocupada'}[state];
+    const percent=total>0?(settled?100:Math.min(99,Math.round(paid/total*100))):0;
+    const number=String(t.id).padStart(2,'0');
+    return '<button type="button" class="dining-table finance-table '+state+'" data-table="'+esc(t.id)+'" aria-label="Mesa '+esc(number)+', '+status+
+      (t.name?', '+esc(t.name):'')+'"><strong class="finance-table-number">'+esc(number)+'</strong>'+
+      '<img class="finance-table-art" src="/img/mesa-praiana.webp" alt="" width="256" height="144">'+
+      '<span class="table-status">'+(state==='free'||settled?'✓ ':'')+status+'</span>'+
+      (t.opened?'<span class="finance-table-amounts"><span>Total <strong>'+money(total)+'</strong></span><span>Pago <strong>'+money(paid)+
+        '</strong></span><span class="finance-table-balance">Saldo <strong>'+money(balance)+'</strong></span></span>'+
+        '<span class="finance-table-progress"><span aria-hidden="true"><i style="width:'+percent+'%"></i></span><span>'+percent+
+        '% pago</span></span>'+(settled?'<span class="finance-table-note">Aguardando encerramento</span>':'')+
+        '<span class="finance-table-action">Conferir</span>':'')+'</button>';
+  }).join('')+'</div></section>';
 }
 function openTable(id) {
   const t = data.tables.find(table=>table.id===id);
