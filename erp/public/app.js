@@ -1342,6 +1342,40 @@ function cashMethods(entry){
     return [method==='Cartão'?'Cartão sem identificação':method,values.amount,values.count];
   });
 }
+const backIcons={
+  layers:'M12 3 3 8l9 5 9-5-9-5ZM3 12l9 5 9-5M3 16l9 5 9-5',
+  chart:'M3 4v17h18M7 17v-5m5 5V6m5 11V9',
+  person:'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a8 8 0 0 1 16 0v2',
+  truck:'M2 5h12v13H2zM14 10h4l4 4v4h-8M8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM20 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',
+  coins:'M20 6c0 2-3.6 3-8 3S4 8 4 6s3.6-3 8-3 8 1 8 3ZM4 6v12c0 2 3.6 3 8 3s8-1 8-3V6M4 12c0 2 3.6 3 8 3s8-1 8-3',
+  document:'M5 2h9l5 5v15H5zM14 2v6h5M12 10v9m2-7h-3a1.5 1.5 0 0 0 0 3h2a1.5 1.5 0 0 1 0 3h-3',
+  clock:'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM12 6v6l4 2',
+  people:'M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM6 21v-2a6 6 0 0 1 12 0v2ZM5 5a3 3 0 0 0 0 6m14-6a3 3 0 0 1 0 6M4 14a5 5 0 0 0-3 5v1m19-6a5 5 0 0 1 3 5v1',
+  settings:'M9 3h6l1 3 3 1 2 4-2 3v3l-4 3-3-1-3 1-4-3v-3l-2-3 2-4 3-1zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
+  printer:'M6 8V3h12v5M6 17H3V8h18v9h-3M6 14h12v8H6zM17 11h1',
+  monitor:'M2 3h20v14H2zM12 17v4m-4 0h8',
+  register:'M7 2h10v4H7zM12 6v3m-7 0h14l3 9H2zM2 18v4h20v-4M7 12h2m3 0h2m3 0h1M7 15h2m3 0h2',
+  pix:'M12 2c1 0 2 1 3 2l5 5c2 2 2 4 0 6l-5 5c-2 2-4 2-6 0l-5-5c-2-2-2-4 0-6l5-5c1-1 2-2 3-2ZM3 12h3l4-4c1-1 3-1 4 0l4 4h3M3 12h3l4 4c1 1 3 1 4 0l4-4h3',
+  card:'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM2 9h20',
+  debit:'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM2 9h20m-8 6h1m3 0h1',
+  cash:'M2 5h20v14H2zM2 9a4 4 0 0 0 4-4m12 0a4 4 0 0 0 4 4M2 15a4 4 0 0 1 4 4m12 0a4 4 0 0 1 4-4M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
+  ticket:'M3 5h18v4a3 3 0 0 0 0 6v4H3v-4a3 3 0 0 0 0-6z',
+  lock:'M6 10V7a6 6 0 0 1 12 0v3M3 10h18v12H3zM12 14v4',
+  check:'m5 12 4 4 10-10'
+};
+const backIcon=name=>'<svg class="back-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="'+backIcons[name]+'"/></svg>';
+const paymentIcons={'Pix':'pix','Cartão de crédito':'card','Cartão de débito':'debit','Dinheiro':'cash','Ticket alimentação':'ticket'};
+const backGroups=[
+  ['Movimentação','layers',[['Resumo','chart'],['customers','person'],['suppliers','truck'],['products','layers']]],
+  ['Financeiro','coins',[['pagar','document'],['receber','document'],['Histórico','clock'],['Funcionários e vales','people']]],
+  ['Sistema','settings',[['Configurações','settings'],['Impressora','printer'],['Atualizações','monitor'],['Restaurar base do PC','monitor'],['Usuários','people']]]
+];
+function backNavigation(tabs){
+  const active=['fixos','impostos'].includes(tab)?'pagar':tab;
+  return '<nav class="back-sidebar" aria-label="Retaguarda">'+backGroups.map(([label,icon,links])=>
+    '<div class="back-nav-group"><h2>'+backIcon(icon)+label+'</h2>'+links.filter(([key])=>tabs.includes(key)).map(([key,symbol])=>
+      '<button data-tab="'+esc(key)+'" '+(key===active?'aria-current="page"':'')+'>'+backIcon(symbol)+esc(names[key]||key)+'</button>').join('')+'</div>').join('')+'</nav>';
+}
 let summaryDay='';
 function dailyCashSummary(state){
   const today=receiptDate(new Date());
@@ -1357,24 +1391,43 @@ function dailyCashSummary(state){
     return entry.count?'Registrado':'Não aberto';
   };
   const status=dayStatus(selected,days.get(selected));
-  const totalLabel=isToday?'Total de hoje':'Total do dia';
   const cards=methods.map(([method,amount,count])=>
-    '<article class="daily-cash-card"><span>'+esc(method)+'</span><strong>'+money(amount)+'</strong><small>'+count+' recebimento(s)</small></article>').join('');
+    '<article class="daily-cash-card" title="'+count+' recebimento(s)"><span class="cash-icon">'+backIcon(paymentIcons[method]||'card')+'</span><span>'+esc(method)+'</span><strong>'+money(amount)+'</strong></article>').join('');
   const history=[...days].sort(([a],[b])=>b.localeCompare(a)).map(([day,entry])=>{
     const formatted=displayCashDate(day);
     const name=day===today?'Hoje':day===yesterday?'Ontem':formatted.slice(0,5);
-    return '<button type="button" data-summary-day="'+esc(day)+'" aria-pressed="'+(day===selected)+'"><span>'+
-      esc(name)+' · '+dayStatus(day,entry)+'</span><small>'+esc(formatted)+'</small></button>';
+    return '<button type="button" data-summary-day="'+esc(day)+'" aria-pressed="'+(day===selected)+'"><span class="cash-icon">'+backIcon('register')+'</span><span><strong>'+
+      esc(name)+' · '+dayStatus(day,entry)+'</strong><small>'+esc(formatted)+'</small></span>'+
+      (day===selected?'<span class="cash-day-check">'+backIcon('check')+'</span>':'')+'</button>';
   }).join('');
-  return '<div class="daily-cash-layout"><aside class="daily-cash-history panel"><h3>Resumo dos caixas por dia</h3>'+
+  return '<div class="daily-cash-layout"><aside class="daily-cash-history panel"><h2>Caixas por dia</h2>'+
     '<div class="daily-cash-days">'+history+'</div></aside>'+
-    '<section class="daily-cash panel"><div class="daily-cash-head"><div><h2>'+
-    (isToday?'Caixa de hoje':'Caixa de '+esc(displayCashDate(selected)))+'</h2><p>'+esc(displayCashDate(selected))+' · '+
-    status+'</p></div><div class="daily-cash-total">'+
-    (isToday&&canView('sales')?'<button type="button" class="primary" data-cash>'+(state.cash?'Fechar caixa':'Abrir caixa')+'</button>':'')+
-    (status!=='Não aberto'?'<p>'+totalLabel+'<br><strong>'+money(total)+'</strong></p>':'')+'</div></div>'+
-    (status==='Não aberto'?'<p>O caixa ainda não foi aberto nesta data.</p>':
-      '<h3>Recebimentos por forma de pagamento</h3><div class="daily-cash-cards">'+cards+'</div>')+'</section></div>';
+    '<section class="daily-cash panel"><h2>'+(isToday?'Caixa de hoje':'Caixa de '+esc(displayCashDate(selected)))+
+    (!isToday?'<small>'+status+'</small>':'')+'</h2><div class="daily-cash-body">'+
+    (isToday&&canView('sales')?'<button type="button" class="primary daily-cash-control" data-cash>'+backIcon('lock')+(state.cash?'Fechar caixa':'Abrir caixa')+'</button>':'')+
+    '<div class="daily-cash-total"><span class="cash-icon">'+backIcon('register')+'</span><span>Total do dia<strong>'+money(total)+'</strong></span></div>'+
+    '<div class="daily-cash-cards">'+cards+'</div></div></section></div>';
+}
+
+function payablesPanel(){
+  const today=receiptDate(new Date());
+  const bills=data.bills.filter(b=>b.kind==='pagar');
+  const open=bills.filter(b=>!b.paid);
+  const sumRemaining=items=>items.reduce((n,b)=>n+creditRules.remaining(b),0);
+  const paid=bills.filter(b=>receiptDate(b.paid)?.slice(0,7)===today.slice(0,7));
+  const totals=[['Em aberto','document',sumRemaining(open)],['Vencidas','clock',sumRemaining(open.filter(b=>b.due&&b.due<today))],
+    ['Pagas no mês','check',sum(paid,'amount')]];
+  const cards=totals.map(([label,icon,total])=>'<div class="daily-cash-total"><span class="cash-icon">'+backIcon(icon)+'</span><span>'+label+'<strong>'+money(total)+'</strong></span></div>').join('');
+  const groups=[['fixos','Custos fixos'],['impostos','Impostos'],['geral','Outras contas']];
+  return '<div class="payable-toolbar"><div class="payable-totals">'+cards+'</div><button class="primary" data-edit="pagar" data-category-bill="'+
+    (tab==='pagar'?'':tab)+'">+ Nova conta</button></div>'+groups.filter(([key])=>tab==='pagar'||tab===key).map(([key,label])=>{
+    const rows=bills.filter(b=>(['fixos','impostos'].includes(b.category)?b.category:'geral')===key)
+      .map(b=>[esc(b.description),esc(partyName(b)),esc(displayCashDate(b.due)),money(b.amount),
+        b.paid?'Liquidado em '+stamp(b.paid)+(b.payments||[]).map(p=>'<br>'+esc(p.method)+' '+money(p.amount)).join(''):
+          b.receipts?.length?'Parcial · saldo '+money(creditRules.remaining(b)):'Em aberto',
+        b.paid?'':(b.receipts?.length?'':edit('pagar',b.id))+' <button data-settle="'+esc(b.id)+'">Registrar pagamento</button>']);
+    return key==='geral'&&!rows.length?'':'<section class="payable-group"><h2>'+label+'</h2>'+table(['Descrição','Fornecedor','Vencimento','Valor','Situação','Ação'],rows)+'</section>';
+  }).join('');
 }
 function back(){
   const tabs=['Resumo',...Object.keys(names).filter(k=>!['fixos','impostos'].includes(k)),'Histórico','Configurações','Impressora',...(localStation?['Atualizações']:[]),...(!localStation&&session?.admin?['Restaurar base do PC']:[]),...(session?.admin?staffTabs:[])];
@@ -1402,6 +1455,8 @@ function back(){
       <h2>Mesas fechadas</h2>${table(['Data','Mesa','Cliente','Total','Comprovante'],
         (data.closedTables||[]).filter(t=>t.receiptId).slice().reverse().map(t=>[stamp(t.closed),esc(t.id),esc(t.name),money(tableTotal(t)),
           '<button data-reprint="'+esc(t.receiptId)+'" data-reprint-table>Reimprimir</button>']))}${movementHistory()}<h2>Itens retirados</h2>${table(['Data','Atendimento','Item','Valor','Responsável'],[...(data.itemRemovals||[])].reverse().map(r=>[stamp(r.time),r.table?'Mesa '+esc(r.table):'Balcão',esc(r.name),money(r.price),esc(r.operator||r.initial)]))}<h2>Comandas canceladas</h2>${table(['Data','Mesa','Cliente','Total','Recebido','Saldo cancelado','Pedido descartado','Responsável'],[...(data.tableCancellations||[])].reverse().map(r=>[stamp(r.time),esc(r.table),esc(r.customer),money(r.total),money(r.paid),money(r.balance),money(r.draftTotal||0),esc(r.operator)]))}<h2>Fechamentos</h2>${table(['Abertura','Fechamento','Esperado','Contado','Diferença'],[...data.shifts].reverse().map(s=>[stamp(s.opened),stamp(s.closed),money(s.expected),money(s.counted),money(s.difference)]))}`;
+  } else if(['pagar','fixos','impostos'].includes(tab)){
+    content=payablesPanel();
   } else {
     const billCategory = ['fixos','impostos'].includes(tab) ? tab : null;
     const billKind = billCategory ? 'pagar' : tab;
@@ -1424,7 +1479,11 @@ function back(){
       content+=table(['Descrição','Cliente / fornecedor','Vencimento','Valor','Situação',''],data.bills.filter(b=>b.kind===billKind&&(!billCategory||b.category===billCategory)).map(b=>[esc(b.description),esc(partyName(b)),esc(b.due.split('-').reverse().join('/')),money(b.amount),b.paid?'Liquidado em '+stamp(b.paid)+(b.payments||[]).map(p=>'<br>'+esc(p.method)+' '+money(p.amount)).join(''):b.receipts?.length?'Parcial · saldo '+money(creditRules.remaining(b)):'Em aberto',b.paid?'':(b.receipts?.length?'':edit(billKind,b.id))+` <button data-settle="${b.id}">${billKind==='pagar'?'Dar baixa no pagamento':'Dar baixa no recebimento'}</button>`]));
     }
   }
-  app.innerHTML=`<section class="back"><h1>Retaguarda</h1><div class="tabs">${tabs.map(k=>`<button class="${k===tab?'active':''}" data-tab="${k}">${names[k]||k}</button>`).join('')}</div>${['pagar','fixos','impostos'].includes(tab)?'<div class="tabs"><button data-tab="pagar">Todas as contas a pagar</button><button data-tab="fixos">Custos fixos</button><button data-tab="impostos">Impostos</button></div>':''}<div class="${tab==='Resumo'?'cash-summary-content':'panel'}">${content}</div></section>`;
+  const payable=['pagar','fixos','impostos'].includes(tab);
+  const filters=payable?'<div class="tabs payable-filters">'+[['pagar','Todas'],['fixos','Custos fixos'],['impostos','Impostos']].map(([key,label])=>'<button data-tab="'+key+'" aria-pressed="'+(key===tab)+'">'+label+'</button>').join('')+'</div>':'';
+  const title=tab==='Resumo'?'Resumo do caixa':payable?'Contas a pagar':names[tab]||tab;
+  app.innerHTML=`<section class="back back-layout">${backNavigation(tabs)}<div class="back-main"><h1>${esc(title)}</h1>${filters}<div class="${tab==='Resumo'?'cash-summary-content':'panel'}">${content}</div></div></section>`;
+
   if(tab==='products'){
     $('#back-product-query').oninput=e=>{productQuery=e.target.value;renderBackProducts();};
     $('#back-product-unpriced').onchange=e=>{productsWithoutPrice=e.target.checked;renderBackProducts();};
@@ -1680,6 +1739,7 @@ document.addEventListener('click',e=>{
       notice(selectedTable?'Salve os itens na mesa antes de sair.':'Para levar o pedido a uma mesa, selecione Só comanda.');
       return;
     }
+    if(d.view==='back'&&view!=='back'){tab='Resumo';summaryDay='';}
     view=d.view;if(view==='sales'){selectedTable=null;comandaTarget='';}if(!order().length)buyer=null;render();
     if(view==='tables')void refreshTables();
   }

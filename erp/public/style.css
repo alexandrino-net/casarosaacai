@@ -516,3 +516,63 @@ dialog:has(#table-tenders) button.primary:disabled {
 #comanda-weight label { flex:1 1 90px; margin:0; }
 #comanda-weight input { width:100%; }
 #comanda-weight output, #comanda-weight strong { align-self:center; }
+
+.back.back-layout {
+  --back-bordo:#68112d;
+  --back-cobre:#c8815c;
+  --back-creme:#fff8ef;
+  --back-pessego:#f7d2bc;
+  margin:0; padding:0; max-width:none; min-height:calc(100dvh - 68px);
+  display:grid; grid-template-columns:minmax(212px,22.1%) minmax(0,1fr);
+  color:#43091f; background:#fcf5ec;
+}
+.back-layout .back-icon { width:1.35em; height:1.35em; flex:none; vertical-align:middle; }
+.back-sidebar { background:var(--back-creme); border-right:1px solid #efc5ac; padding:22px 16px; }
+.back-nav-group + .back-nav-group { margin-top:24px; }
+.back-nav-group h2,.back-sidebar button { display:flex; gap:12px; align-items:center; font-size:1rem; padding:8px 12px; border-radius:10px; margin:0 0 4px; }
+.back-nav-group h2 { font-weight:800; color:var(--back-bordo); background:#f8ddcb; }
+.back-sidebar button { width:100%; text-align:left; background:transparent; min-height:38px; }
+.back-sidebar button:hover { background:#f8ddcb; }
+.back-sidebar button[aria-current] { background:var(--back-bordo); color:white; font-weight:700; }
+.back-main { min-width:0; padding:clamp(16px,1.8vw,28px); }
+.back-main > h1 { color:var(--back-bordo); font-size:clamp(26px,3vw,46px); margin:0 0 .7em; }
+.back-layout .daily-cash-layout { grid-template-columns:minmax(0,4fr) minmax(0,5fr); gap:clamp(12px,1.4vw,22px); }
+.back-layout .daily-cash-layout > .panel { padding:0; overflow:hidden; border:1px solid var(--back-cobre); background:var(--back-creme); }
+.daily-cash-layout .panel > h2,.payable-group > h2 { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:clamp(19px,2.4vw,36px); color:var(--back-bordo); padding:8px 16px; margin:0; background:var(--back-pessego); }
+.daily-cash-layout .panel > h2 small { font-size:.52em; }
+.daily-cash-body,.back-layout .daily-cash-days { padding:clamp(10px,1.35vw,21px); }
+.back-layout .daily-cash-days { gap:12px; }
+.back-layout .daily-cash-days button,.back-layout .daily-cash-card,.back-layout .daily-cash-total {
+  display:flex; align-items:center; gap:clamp(8px,1vw,16px); border:1px solid var(--back-cobre);
+  border-radius:12px; color:var(--back-bordo); background:var(--back-creme);
+}
+.back-layout .daily-cash-days button { padding:10px; font-size:clamp(14px,1.5vw,22px); }
+.back-layout .daily-cash-days button[aria-pressed="true"] { box-shadow:inset 0 0 0 2px var(--back-bordo); border-color:var(--back-bordo); background:#fae3d9; }
+.daily-cash-days small { display:block; margin-top:4px; }
+.cash-day-check { margin-left:auto; padding:5px; border-radius:50%; color:white; background:var(--back-bordo); }
+.back-layout .cash-icon { display:grid; place-items:center; background:#faddc8; border-radius:9px; min-width:2.5em; padding:.45em; }
+.back-layout .cash-icon + span { border-left:1px solid var(--back-cobre); padding-left:clamp(6px,.9vw,14px); }
+.back-layout .daily-cash-control { width:100%; display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:16px; background:var(--back-bordo); }
+.back-layout .daily-cash-total { padding:clamp(12px,1.7vw,26px); text-align:left; font-size:clamp(15px,1.7vw,25px); font-weight:700; background:#fae9db; }
+.back-layout .daily-cash-total strong { display:block; font-size:clamp(22px,3.5vw,52px); }
+.back-layout .daily-cash-cards { grid-template-columns:1fr; margin-top:18px; }
+.back-layout .daily-cash-card { padding:6px 10px; font-size:clamp(13px,1.45vw,22px); font-weight:700; }
+.back-layout .daily-cash-card strong { margin-left:auto; white-space:nowrap; text-align:right; }
+.payable-toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; }
+.payable-totals { flex:1 1 450px; display:grid; gap:10px; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.payable-totals .daily-cash-total { padding:12px; font-size:1rem; flex-wrap:wrap; }
+.payable-totals .daily-cash-total strong { font-size:clamp(16px,1.8vw,28px); }
+.payable-group { border:1px solid var(--back-cobre); border-radius:12px; overflow:hidden; margin-top:16px; }
+.payable-group > p { padding:0 12px; }
+.payable-group .table { margin-top:0; }
+.payable-filters button[aria-pressed="true"] { color:white; background:var(--back-bordo); font-weight:700; }
+@media(max-width:900px) {
+  .back-layout .daily-cash-layout { grid-template-columns:1fr; }
+}
+@media(max-width:620px) {
+  .back.back-layout { grid-template-columns:minmax(0,1fr); }
+  .back-sidebar { display:flex; gap:12px; overflow-x:auto; border-right:0; border-bottom:1px solid #efc5ac; padding:10px; }
+  .back-nav-group { min-width:max-content; }
+  .back-nav-group + .back-nav-group { margin-top:0; }
+  .payable-totals { grid-template-columns:1fr; }
+}
