@@ -636,3 +636,8 @@ dialog:has(#table-tenders) button.primary:disabled {
 .finance-table-progress i { display:block; height:100%; background:#21864b; border-radius:inherit; }
 .finance-table-note { background:#ffe2ab; border-radius:5px; padding:3px; color:#583509; font-size:.7rem; }
 .finance-table-action { margin-top:auto; width:100%; padding:5px 4px; border-radius:7px; color:#fff; background:#701b33; font-weight:700; }
+
+.table-bill-request {
+  display:block; width:100%; border:1px solid #bc7932; border-radius:7px;
+  padding:5px 6px; background:#fff1cc; color:#653a04; font-weight:700; font-size:.8rem;
+}

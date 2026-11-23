@@ -356,15 +356,31 @@ function tables() {
         '</strong></span><span class="finance-table-balance">Saldo <strong>'+money(balance)+'</strong></span></span>'+
         '<span class="finance-table-progress"><span aria-hidden="true"><i style="width:'+percent+'%"></i></span><span>'+percent+
         '% pago</span></span>'+(settled?'<span class="finance-table-note">Aguardando encerramento</span>':'')+
+        (t.billRequestedAt&&!settled?'<span class="table-bill-request">Conta solicitada</span>':'')+
         '<span class="finance-table-action">Conferir</span>':'')+'</button>';
   }).join('')+'</div></section>';
+}
+function requestTableBill(){
+  const expected=tableOrder();
+  if(!expected?.opened || tableTotal(expected)<=tablePaid(expected)){
+    notice('A comanda precisa ter saldo para solicitar a conta.');
+    return;
+  }
+  const requestedAt=expected.billRequestedAt?null:date();
+  fields(requestedAt?'Solicitar conta':'Limpar aviso da conta','<p>Mesa '+esc(expected.id)+'</p>',async ()=>{
+    await save(next=>{
+      const table=sameTable(next,expected);
+      if(requestedAt && tableTotal(table)<=tablePaid(table))throw review('A comanda já está quitada.');
+      table.billRequestedAt=requestedAt;
+    },true);
+  },requestedAt?'Solicitar conta':'Limpar aviso');
 }
 function openTable(id) {
   const t = data.tables.find(table=>table.id===id);
   const enter = () => { saleMode='comanda'; comandaTarget=id; selectedTable=id; selectedOpening=tableOrder().opened; view='sales'; };
   if (t.opened) { enter(); render(); void refreshTables(); return; }
   fields('Abrir mesa ' + id, input('Nome da mesa / cliente','name','','text','maxlength="100"'), async v => {
-    await save(next => Object.assign(sameTable(next,t), {name:v.name.trim(),opened:date(),service:true}), true);
+    await save(next => Object.assign(sameTable(next,t), {name:v.name.trim(),opened:date(),service:true,billRequestedAt:null}), true);
     enter();
   },'Abrir mesa');
 }
@@ -430,6 +446,7 @@ function receiveTable(partial=false){
           if(creditGroup)next.bills.push({id:crypto.randomUUID(),kind:'receber',saleId:id,party:customer.id,
             description:'Venda '+id.slice(0,8),amount:total,due:due.value,paid:null});
         }
+        if(tablePaid(current)>=tableTotal(current))current.billRequestedAt=null;
       },true);
       notice(change?'Pagamento registrado. Troco: '+money(change):'Pagamento registrado.');
     },'Confirmar pagamento');
@@ -491,7 +508,7 @@ function moveTable(){
     await save(next=>{
       const from=sameTable(next,source), to=sameTable(next,target);
       Object.assign(to,{...from,id:to.id});
-      Object.assign(from,{name:'',opened:null,items:[],payments:[],service:false});
+      Object.assign(from,{name:'',opened:null,items:[],payments:[],service:false,billRequestedAt:null});
     },true);
     selectedTable=comandaTarget=target.id;
     selectedOpening=source.opened;
@@ -509,7 +526,7 @@ function closeTable() {
       if (tableTotal(table)!==tablePaid(table) || table.items.length!==t.items.length || table.payments.length!==t.payments.length)
         throw review('A comanda mudou. Confira o consumo e os pagamentos.');
       next.closedTables.push({...structuredClone(table),id:table.id,receiptId:operationId,closed:date()});
-      Object.assign(table,{name:'',opened:null,items:[],payments:[],service:false});
+      Object.assign(table,{name:'',opened:null,items:[],payments:[],service:false,billRequestedAt:null});
     },true);
     const closed=data.closedTables.find(t=>t.receiptId===operationId);
     selectedTable=null;comandaTarget='';view='tables';
@@ -533,7 +550,7 @@ function cancelTable(){
         (next.tableCancellations??=[]).push({id:operationId,time:date(),table:t.id,customer:current.name,
           operator:session?.name||session?.login||'Caixa local',items:current.items,payments:current.payments,
           draft,total,paid,balance,draftTotal:sum(draft,'total')});
-        Object.assign(current,{name:'',opened:null,items:[],payments:[],service:false});
+        Object.assign(current,{name:'',opened:null,items:[],payments:[],service:false,billRequestedAt:null});
       },true);
       cart={};buyer=null;selectedTable=null;selectedOpening=null;comandaTarget='';counterService=true;view='tables';
       notice('Comanda cancelada. A mesa está livre.');
@@ -717,6 +734,7 @@ function openComandaCards(){
     return '<article class="open-comanda-card"><div class="open-comanda-heading"><span>'+icon+'</span><div><strong>'+esc(label)+'</strong>'+
       (table.name?'<small>'+esc(table.name)+'</small>':'')+'</div></div><div class="open-comanda-info"><span>'+
       count+(count===1?' item':' itens')+'</span><strong>'+money(tableTotal(table)-tablePaid(table))+'</strong></div>'+
+      (table.billRequestedAt&&tableTotal(table)>tablePaid(table)?'<span class="table-bill-request">Conta solicitada</span>':'')+
       '<button class="primary" data-table="'+esc(table.id)+'" aria-label="Conferir '+esc(label)+'">Conferir</button></article>';
   }).join('')+'</div>':'<p>Nenhuma mesa aberta com pedidos.</p>');
 }
@@ -755,7 +773,7 @@ function sales(){
       '<button class="primary wide" type="button" data-pay="" '+(lines.length?'':'disabled')+'>Salvar itens</button>';
     const actions=document.createElement('div');
     actions.className='comanda-review-actions';
-    actions.innerHTML='<button data-rename>Editar nome</button><button data-move-table>Mudar mesa</button>'+
+    actions.innerHTML=(tableTotal(t)>paid?'<button class="table-bill-request" data-request-table-bill>'+(t.billRequestedAt?'Conta solicitada · Limpar aviso':'Solicitar conta')+'</button>':'')+'<button data-rename>Editar nome</button><button data-move-table>Mudar mesa</button>'+
       '<button data-print-order>Espelho da comanda</button><button data-fee aria-pressed="'+Boolean(t.service)+'">'+(t.service?'Retirar':'Incluir')+' 10%</button>'+
       '<button data-table-receive="partial">Pagamento parcial</button><button class="comanda-danger" data-table-cancel>Cancelar comanda</button>';
     const footer=document.createElement('div');
@@ -1737,6 +1755,7 @@ document.addEventListener('click',e=>{
   if(d.identify!==undefined){if(dialog.open)dialog.close();identifyBuyer();return;}
   if(d.collect!==undefined){if(dialog.open)dialog.close();receiveCredit();return;}
   if(d.table)openTable(d.table);
+  if(d.requestTableBill!==undefined && selectedTable && canView('sales'))requestTableBill();
   if(d.printOrder!==undefined)printOrder();
   if(d.tableReceive!==undefined)receiveTable(d.tableReceive==='partial');
   if(d.moveTable!==undefined)moveTable();
