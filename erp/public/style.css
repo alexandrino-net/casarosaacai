@@ -350,7 +350,13 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 .table-payment-row label { min-width:0; margin:0; }
 .table-payment-row :is(select,input) { width:100%; }
 .table-payment-row button { min-height:40px; }
-#table-payment-summary { padding:10px; background:var(--tint); border-radius:8px; }
+#table-payment-summary {
+  display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px 12px;
+  margin:12px 0 0; padding:10px 12px; border-radius:8px;
+  background:var(--brand); color:white; font-weight:700;
+}
+#table-payment-summary strong { font-size:1.35rem; white-space:nowrap; }
+#table-payment-warning { margin:10px 0 0; color:var(--brand-dark); }
 @media(max-width:760px){
   .pos.comanda-review, .pos.comanda-review.sale-landscape { grid-template-columns:minmax(0,1fr); padding:10px; }
   .comanda-review .order { grid-row:2; }
@@ -406,7 +412,7 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
 }
 .comanda-review-items .table { border:1px solid var(--comanda-linha); border-radius:8px; overflow:auto; }
 .comanda-review-items td { border-bottom:1px dashed var(--comanda-linha); }
-.comanda-review .comanda-balance, #table-payment-summary, #comanda-notice {
+.comanda-review .comanda-balance, #comanda-notice {
   background:var(--comanda-saldo); color:var(--comanda-bordo);
 }
 .comanda-review .comanda-balance { font-size:1.15rem; }

@@ -405,14 +405,14 @@ function receiveTable(partial=false){
     amount('Valor (R$)','part',value,'.01')+'<button type="button" data-remove-tender>Remover</button></div>';
   fields(partial?'Pagamento parcial':'Pagamento',
     '<p>Mesa '+esc(t.id)+(t.name?' · '+esc(t.name):'')+' · Saldo da comanda <strong>'+money(balance)+'</strong></p>'+
-    (partial?amount('Valor a abater agora','target','','.01'):'')+
     '<div id="table-tenders">'+row('Pix',partial?'':(balance/100).toFixed(2))+'</div>'+
     '<button id="add-table-tender" type="button">Adicionar meio de pagamento</button>'+
     '<div id="table-credit" hidden>'+select('Cliente cadastrado','party',customers,'')+
-    input('Vencimento','due','','date')+'</div><p id="table-payment-summary" role="status"></p>',async()=>{
-      const {target,parts}=readPayment();
-      const {payments,remaining,change,given}=allocateTablePayment(target,parts);
-      if(remaining!==0)throw Error('Distribua todo o valor antes de confirmar.');
+    input('Vencimento','due','','date')+'</div><p id="table-payment-warning" role="status" hidden></p>'+
+    '<p id="table-payment-summary" role="status"><span>Saldo restante</span><strong>'+money(balance)+'</strong></p>',async()=>{
+      const parts=readPayment();
+      const {payments,remaining,change,given}=allocateTablePayment(balance,parts);
+      if(!payments.length || (!partial&&remaining!==0))throw Error('Informe o valor a receber antes de confirmar.');
       const credit=payments.find(p=>p.method==='A prazo');
       const received=payments.filter(p=>p!==credit);
       await save(next=>{
@@ -440,15 +440,11 @@ function receiveTable(partial=false){
       notice(change?'Pagamento registrado. Troco: '+money(change):'Pagamento registrado.');
     },'Confirmar pagamento');
   const list=$('#table-tenders'), party=dialog.querySelector('[name=party]'), due=dialog.querySelector('[name=due]');
-  const confirm=dialog.querySelector('button.primary'), summary=$('#table-payment-summary');
-  const targetField=dialog.querySelector('[name=target]');
-  const readPayment=()=>{
-    const target=partial?cents(targetField.value):balance;
-    if(target>balance || (partial&&target===balance))throw Error('Use Pagamento para quitar todo o saldo.');
-    return {target,parts:[...list.querySelectorAll('.table-payment-row')].map(el=>({
-      method:el.querySelector('[name=method]').value,amount:cents(el.querySelector('[name=part]').value)
-    }))};
-  };
+  const confirm=dialog.querySelector('button.primary'), summary=$('#table-payment-summary strong');
+  const warning=$('#table-payment-warning');
+  const readPayment=()=>[...list.querySelectorAll('.table-payment-row')].map(el=>({
+    method:el.querySelector('[name=method]').value,amount:cents(el.querySelector('[name=part]').value)
+  }));
   const update=()=>{
     const hasCredit=[...list.querySelectorAll('select')].some(el=>el.value==='A prazo');
     $('#table-credit').hidden=!hasCredit;
@@ -457,16 +453,24 @@ function receiveTable(partial=false){
     for(const el of rows)el.querySelector('[data-remove-tender]').hidden=rows.length===1;
     $('#add-table-tender').disabled=rows.length>=methods.length;
     confirm.disabled=true;
+    warning.hidden=true;
+    const parts=readPayment();
+    const filled=parts.filter(p=>p.method&&p.amount>0);
+    let remaining=balance;
     try{
-      const {target,parts}=readPayment();
-      const filled=parts.filter(p=>p.method&&p.amount>0);
-      const {remaining,change}=allocateTablePayment(target,filled);
-      summary.textContent='Valor distribuído: '+money(target-remaining)+' · Falta distribuir: '+money(remaining)+
-        (partial?' · Saldo após pagamento: '+money(balance-target):'')+(change?' · Troco: '+money(change):'');
-      if(remaining||filled.length!==parts.length)return;
+      const allocation=allocateTablePayment(balance,filled);
+      remaining=allocation.remaining;
+      if(allocation.change){
+        warning.textContent='Troco: '+money(allocation.change);
+        warning.hidden=false;
+      }
+      if(!filled.length || (!partial&&remaining!==0) || filled.length!==parts.length)return;
       if(hasCredit)creditRules.check(data,data.customers.find(c=>c.id===party.value),filled.find(p=>p.method==='A prazo').amount,due.value);
       confirm.disabled=false;
-    }catch(error){summary.textContent=error.message;}
+    }catch(error){
+      warning.textContent=error.message;
+      warning.hidden=false;
+    }finally{summary.textContent=money(remaining);}
   };
   due.min=creditRules.today();
   party.onchange=()=>{
