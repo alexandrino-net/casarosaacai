@@ -664,3 +664,34 @@ dialog:has(#table-tenders) button.primary:disabled {
 .daily-cash-hours { list-style:none; margin:0 0 10px; padding:0; font-size:.82rem; }
 .daily-cash-hours li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 14px; padding:5px 0; }
 .daily-cash-hours li + li { border-top:1px solid var(--back-cobre); }
+
+.report-document { color:#291b20; }
+.report-brand { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:4px solid #65152e; border-bottom:1px solid #b57050; }
+.report-brand img { object-fit:contain; border-radius:8px; }
+.report-brand strong,.report-brand span { display:block; }
+.report-brand strong { color:#65152e; font-size:1.25em; }
+.report-brand span { font-size:.85em; color:#605157; }
+.report-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:16px 0; }
+.report-heading h2,.report-heading p { margin:0; }
+.report-heading h2 { font-size:1.7em; }
+.report-heading p { font-size:.9em; }
+.report-metrics { display:flex; flex-wrap:wrap; gap:8px; }
+.report-metrics > div { flex:1 1 135px; border:1px solid #cc9178; border-radius:8px; padding:9px 12px; background:#fff6ef; }
+.report-metrics span,.report-metrics strong { display:block; }
+.report-metrics strong { color:#65152e; font-size:1.45em; }
+.report-document h3 { margin:20px 0 7px; color:#65152e; font-size:1.1em; }
+.report-table { overflow:auto; }
+.report-table :is(td,th) { padding:7px 8px; border-bottom:1px solid #e2c8ba; }
+.report-table th { background:#f5e5dc; color:#4c1125; }
+.report-table .report-number { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.report-table tfoot td { border-top:2px solid #b57050; font-weight:750; color:#4c1125; }
+@media print {
+  .cash-report-dialog[open] { width:100%; margin:0; border:0; box-shadow:none; }
+  .report-document { padding:7mm 8mm; font-size:10pt; }
+  .report-table { overflow:visible; }
+  .report-table thead { display:table-header-group; }
+  .report-table tfoot { display:table-row-group; }
+  .report-document h3 { break-after:avoid; }
+  .report-brand,.report-heading,.report-metrics,.report-table tfoot tr { break-inside:avoid; }
+  .report-document { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+}

@@ -1385,6 +1385,13 @@ let summaryDay='', showDailyTotal=true;
 function selectedCashDay(days,today){
   return days.has(summaryDay)?summaryDay:today;
 }
+function reportTable(headers,rows,totals,numeric){
+  if(!rows.length)return '<p>Nenhum lançamento no período.</p>';
+  const cells=(values,tag)=>values.map((value,i)=>'<'+tag+(numeric.includes(i)?' class="report-number"':'')+'>'+value+'</'+tag+'>').join('');
+  return '<div class="report-table"><table><thead><tr>'+cells(headers,'th')+'</tr></thead><tbody>'+
+    rows.map(row=>'<tr>'+cells(row,'td')+'</tr>').join('')+'</tbody>'+
+    '<tfoot><tr>'+cells(totals,'td')+'</tr></tfoot></table></div>';
+}
 function cashReport(kind){
   const today=receiptDate(new Date()), days=cashDays(data,today);
   const day=selectedCashDay(days,today);
@@ -1392,21 +1399,33 @@ function cashReport(kind){
   if(!Object.hasOwn(titles,kind))return;
   const closings=data.shifts.filter(shift=>receiptDate(shift.closed)===day);
   const methods=cashMethods(days.get(day));
-  const totals=table(['Forma de pagamento','Recebimentos','Valor'],
-    [...methods.map(([method,value,count])=>[esc(method),count,money(value)]),
-      ['<strong>Total recebido</strong>','',money(methods.reduce((total,[,value])=>total+value,0))]]);
-  const sales=kind==='sales'?'<h3>Vendas e lançamentos de comanda</h3>'+table(['Horário','Descrição','Pagamento','Valor lançado'],
-    data.sales.filter(sale=>receiptDate(sale.time)===day).map(sale=>[
-      esc(stamp(sale.time)),sale.table?'Mesa '+esc(sale.table)+(sale.partial?' · Pagamento registrado':''):'Venda direta',
+  const received=methods.reduce((total,[,value])=>total+value,0);
+  const entries=data.sales.filter(sale=>receiptDate(sale.time)===day).sort((a,b)=>new Date(a.time)-new Date(b.time));
+  const metrics=(values)=>'<div class="report-metrics">'+values.map(([label,value])=>
+    '<div><span>'+label+'</span><strong>'+value+'</strong></div>').join('')+'</div>';
+  const totals='<h3>Recebimentos por forma de pagamento</h3>'+reportTable(['Forma de pagamento','Recebimentos','Valor'],
+    methods.map(([method,value,count])=>[esc(method),count,money(value)]),
+    ['Total recebido',methods.reduce((count,[,,n])=>count+n,0),money(received)],[1,2]);
+  const salesTotal=sum(entries,'total');
+  const sales=kind==='sales'?'<h3>Vendas e pagamentos de comanda</h3>'+reportTable(['Horário','Descrição','Pagamento','Valor lançado'],
+    entries.map(sale=>[
+      esc(cashClock.format(new Date(sale.time))),sale.table?'Mesa '+esc(sale.table)+(sale.partial?' · Pagamento':''):'Venda direta',
       sale.payments?.length?sale.payments.map(part=>esc(part.method)+' '+money(part.amount)).join('<br>'):esc(sale.method),
-      money(sale.total)])):'';
-  const closing=table(['Abertura','Fechamento','Fundo inicial','Dinheiro esperado','Dinheiro contado','Diferença'],
-    closings.map(s=>[esc(stamp(s.opened)),esc(stamp(s.closed)),money(s.initial),money(s.expected),money(s.counted),money(s.difference)]));
+      money(sale.total)]),['Total dos lançamentos',entries.length+' registro(s)','',money(salesTotal)],[3]):'';
+  const closing=closings.length?metrics([['Dinheiro esperado',money(sum(closings,'expected'))],
+    ['Dinheiro contado',money(sum(closings,'counted'))],['Diferença',money(sum(closings,'difference'))]])+
+    '<h3>Conferência dos fechamentos</h3>'+reportTable(['Abertura','Fechamento','Fundo inicial','Esperado','Contado','Diferença'],
+      closings.map(s=>[esc(stamp(s.opened)),esc(stamp(s.closed)),money(s.initial),money(s.expected),money(s.counted),money(s.difference)]),
+      ['Totais','',...['initial','expected','counted','difference'].map(key=>money(sum(closings,key)))],[2,3,4,5]):
+    '<p>Não há fechamento registrado nesta data.</p>';
   const report=document.createElement('dialog');
   report.className='cash-report-dialog';
   report.setAttribute('aria-labelledby','cash-report-title');
-  report.innerHTML='<article><h2 id="cash-report-title">'+titles[kind]+'</h2><p>Casa Rosa Açaí · '+esc(displayCashDate(day))+
-    '</p>'+(kind==='closing'?(closings.length?closing:'<p>Não há fechamento registrado nesta data.</p>'):totals+sales)+
+  report.innerHTML='<article class="report-document"><div class="report-brand"><img src="/img/6.jpg" alt="" width="52" height="52">'+
+    '<div><strong>Casa Rosa Açaí</strong><span>Retaguarda · Caixa</span></div></div>'+
+    '<div class="report-heading"><h2 id="cash-report-title">'+titles[kind]+'</h2><p>Data de referência <strong>'+esc(displayCashDate(day))+
+    '</strong></p></div>'+(kind==='closing'?closing:metrics([['Total recebido',money(received)],
+      ...(kind==='sales'?[['Total dos lançamentos',money(salesTotal)],['Registros de venda e pagamento',entries.length]]:[])])+totals+sales)+
     '</article><div class="cash-report-actions"><button type="button">Voltar</button><button type="button" class="primary">Imprimir / Salvar PDF</button></div>';
   report.querySelector('button').onclick=()=>report.close();
   report.querySelector('.primary').onclick=()=>window.print();
