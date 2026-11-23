@@ -361,39 +361,82 @@ body > p[role="status"] {margin:0;padding:5px 16px;background:#f0e5d6;color:#442
   .table-payment-row button { grid-column:1/-1; justify-self:end; }
 }
 
-/* Paleta da demonstração para conferência e pagamento da comanda. */
-.comanda-review, dialog:has(#table-tenders) {
-  --comanda-vinho:#750241;
-  --comanda-rosa:#ffcddf;
-  --comanda-rosa-suave:#f9d4e2;
-  --comanda-rosa-controle:#f5cedc;
+/* Bordô e cobre — conferência e pagamento da comanda. */
+.comanda-window, dialog:has(#table-tenders) {
+  --comanda-bordo:#581927;
+  --comanda-cobre:#ad7355;
+  --comanda-linha:#dec1b1;
+  --comanda-marfim:#fffbf5;
+  --comanda-pessego:#f5d5c8;
+  --comanda-saldo:#f8dfd3;
+  background:var(--comanda-marfim);
 }
-.comanda-review :is(h1,h2), dialog:has(#table-tenders) h2 {
-  color:var(--comanda-vinho);
+.comanda-window { border-color:var(--comanda-cobre); }
+.comanda-window::backdrop { background:#241419a6; }
+.pos.comanda-review, .pos.comanda-review.sale-landscape {
+  background:var(--comanda-marfim);
+  overflow:visible;
 }
+.comanda-review-header {
+  background:var(--comanda-bordo); color:white; padding:10px 14px; border-radius:10px;
+}
+.comanda-review-header h1 { color:white; font-size:clamp(22px,2.5vw,32px); margin-bottom:2px; }
+.comanda-review-header p { margin:0; }
+.comanda-review > :is(.catalog,.order) {
+  background:#fffdf9; border-color:var(--comanda-linha);
+}
+.comanda-review .catalog > .split { display:block; }
+.comanda-review :is(h2,th), dialog:has(#table-tenders) h2 { color:var(--comanda-bordo); }
 .comanda-review > :is(.catalog,.order) h2, .comanda-review-items th {
-  background:var(--comanda-rosa);
-  color:var(--comanda-vinho);
+  background:var(--comanda-pessego);
 }
-.comanda-review > :is(.catalog,.order) h2 {
-  padding:6px 10px; border-radius:8px;
+.comanda-review > :is(.catalog,.order) h2 { padding:6px 10px; border-radius:8px; }
+.comanda-review :is(input,select), dialog:has(#table-tenders) :is(input,select) {
+  border-color:var(--comanda-linha); background:#fffdf9;
 }
-.comanda-review .comanda-balance, #table-payment-summary {
-  background:var(--comanda-rosa-suave); color:var(--comanda-vinho);
+.comanda-review .sale-category-menu { background:var(--comanda-marfim); border-color:var(--comanda-linha); }
+.comanda-review #products .card {
+  background:#fcf2e9; border:1px solid var(--comanda-linha); border-radius:9px;
+  align-items:center; padding:4px; box-shadow:none;
 }
+.comanda-review #products .card img, .comanda-review #products .placeholder { border-radius:6px; }
+.comanda-review #products .card .details { padding:4px 6px; gap:5px; }
+.comanda-review #products button.product-position {
+  min-height:28px; padding:2px 6px; justify-self:end; font-size:.75rem;
+}
+.comanda-review-items .table { border:1px solid var(--comanda-linha); border-radius:8px; overflow:auto; }
+.comanda-review-items td { border-bottom:1px dashed var(--comanda-linha); }
+.comanda-review .comanda-balance, #table-payment-summary, #comanda-notice {
+  background:var(--comanda-saldo); color:var(--comanda-bordo);
+}
+.comanda-review .comanda-balance { font-size:1.15rem; }
 .comanda-review button, dialog:has(#table-tenders) button {
-  background:#fff; color:var(--comanda-vinho); border:1px solid var(--comanda-vinho);
+  background:var(--comanda-marfim); color:var(--comanda-bordo); border:1px solid var(--comanda-cobre);
+  font-weight:650;
 }
 .comanda-review :is(button.active,button.primary,button.add,[data-table-receive="partial"]),
 dialog:has(#table-tenders) button.primary {
-  background:var(--comanda-vinho); color:#fff; border-color:var(--comanda-vinho);
+  background:var(--comanda-bordo); color:white; border-color:var(--comanda-bordo);
 }
 .comanda-review button[data-review-minus] {
-  background:var(--comanda-rosa-controle); border-color:var(--comanda-rosa-controle);
+  background:var(--comanda-pessego); border-color:var(--comanda-pessego);
 }
-.comanda-review button.comanda-danger {
-  background:#fff; color:#b00020; border-color:#b00020;
+.comanda-review button.comanda-danger { color:#a51228; border-color:#a51228; }
+.comanda-review-footer {
+  position:sticky; bottom:0; background:var(--comanda-marfim); border-color:var(--comanda-linha);
+  box-shadow:0 5px 0 5px var(--comanda-marfim);
 }
+.comanda-review-footer .primary { flex:0 1 68%; }
 dialog:has(#table-tenders) button.primary:disabled {
-  background:#e4dce0; color:#52434b; border-color:#e4dce0; opacity:1;
+  background:#eaded8; color:#564540; border-color:#eaded8; opacity:1;
+}
+@media(min-width:761px) and (min-height:530px){
+  .pos.comanda-review, .pos.comanda-review.sale-landscape {
+    max-height:calc(94dvh - 2px);
+    grid-template-rows:auto minmax(0,1fr) auto auto auto;
+  }
+  .comanda-review > .catalog { overflow:auto; }
+  .comanda-review > .order { overflow:auto; }
+  .comanda-review .catalog #products { flex:1 1 175px; }
+  .comanda-review .catalog > :is(.split,.sale-search,.sale-search-help,.sale-category-tabs,button) { flex-shrink:0; }
 }
