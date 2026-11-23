@@ -1158,7 +1158,7 @@ function employeeEntry(kind){
 function editUser(login){
   const u=staffData.users.find(u=>u.login===login);
   fields(u?'Editar usuário':'Novo usuário',input('Nome','name',u?.name)+input('Login','login',login,'text',u?'readonly':'required maxlength="64"')+
-    input(u?'Nova senha (opcional)':'Senha','password','','password',(u?'':'required ')+'minlength="10" maxlength="256" autocomplete="new-password"')+
+    input(u?'Nova senha (opcional)':'Senha','password','','password',(u?'':'required ')+'minlength="6" maxlength="256" autocomplete="new-password"')+
     select('Acesso aos cadastros de equipe e vales','profile',[['operator','Operador'],['admin','Administrador']],u?.admin?'admin':'operator')+
     select('Áreas permitidas para operador','access',[['both','Vendas, mesas, caixa e retaguarda'],['sales','Vendas, mesas e caixa'],['back','Somente retaguarda']],u?.access||'both')+
     select('Situação','status',[['active','Ativo'],['inactive','Inativo']],u?.active===false?'inactive':'active'),async v=>{

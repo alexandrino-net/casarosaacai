@@ -63,10 +63,10 @@ function loginPage(action='/entrar',mode='login',error=''){
   return '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Casa Rosa ERP</title>'+
     '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f8edf3;color:#40152e;font:16px system-ui}main{width:min(380px,calc(100vw - 88px));padding:28px;background:white;border-radius:20px}label,input,button{display:block;width:100%;box-sizing:border-box}input,button{padding:12px;margin:6px 0 18px;border:1px solid #bc9caf;border-radius:8px;font:inherit}button{background:#74274f;color:white;cursor:pointer}p{line-height:1.45}a{color:#74274f}body.login-photo{box-sizing:border-box;padding:24px 16px 52px;position:relative;background-size:cover;background-position:center}body.login-photo main{box-shadow:0 12px 44px #2106194d}#login-photo-credit{position:absolute;bottom:12px;left:16px;color:white;background:#24131e;padding:5px 9px;border-radius:6px;font-size:12px}</style>'+
     '<body'+(mode==='login'?' class="login-photo"':'')+'><main><h1>Casa Rosa ERP</h1><h2>'+(setup?'Criar administrador local':link?'Vincular à nuvem':'Entrar')+'</h2>'+
-    (setup?'<p>Defina seu usuário e uma senha de pelo menos 10 caracteres. Você pode fazer isso sem internet.</p>':'')+
+    (setup?'<p>Defina seu usuário e uma senha de pelo menos 6 caracteres. Você pode fazer isso sem internet.</p>':'')+
     (error?'<p role="alert">'+error+'</p>':'')+'<form method="post" action="'+action+'">'+
     '<label>Usuário<input name="login" autocomplete="username" required maxlength="64"></label>'+
-    '<label>Senha<input type="password" name="password" autocomplete="'+(setup?'new-password':'current-password')+'" required maxlength="256" '+(setup?'minlength="10"':'')+'></label>'+
+    '<label>Senha<input type="password" name="password" autocomplete="'+(setup?'new-password':'current-password')+'" required maxlength="256" '+(setup?'minlength="6"':'')+'></label>'+
     '<button>'+(setup?'Criar e entrar':link?'Vincular':'Entrar')+'</button></form>'+(link?'<a href="/">Voltar ao ERP</a>':'')+'</main>'+
     (mode==='login'?'<a id="login-photo-credit" target="_blank" rel="noopener noreferrer" hidden></a><script>('+rotateLoginPhoto.toString()+')('+JSON.stringify(loginPhotos)+','+Boolean(error)+');</script>':'')+
     '</body></html>';

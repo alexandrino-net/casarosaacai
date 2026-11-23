@@ -77,7 +77,7 @@ module.exports = function staffStore(pool,folder,localSales) {
     if (typeof id!=='string' || !/^[a-f0-9-]{36}$/i.test(id)) fail('Operação inválida.');
     let credentials;
     if(action==='user' && command.password){
-      if(typeof command.password!=='string' || command.password.length<10 || command.password.length>256) fail('Use uma senha de 10 a 256 caracteres.');
+      if(typeof command.password!=='string' || command.password.length<6 || command.password.length>256) fail('Use uma senha de 6 a 256 caracteres.');
       const salt=crypto.randomBytes(16).toString('hex');
       credentials={salt,key:(await derive(command.password,salt,32)).toString('hex')};
     }
