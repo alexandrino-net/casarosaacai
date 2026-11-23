@@ -5,7 +5,18 @@ const cents = value => Math.round(Number(value)*100);
 const sum = (items, key) => items.reduce((n,item)=>n+item[key],0);
 const date = () => new Date().toISOString();
 const stamp = value => new Date(value).toLocaleString('pt-BR');
-let data, busy=false, view='sales', tab='Resumo', category='Açaí', search='', cart={};
+const mobileAttendance=location.pathname==='/atendimento';
+const mobileLayoutKey='casa-rosa:visual-atendimento';
+const mobileLayouts=[['cards','Cartões'],['list','Lista rápida'],['queue','Atendimento'],['combined','Combinado']];
+let mobileLayout='combined';
+if(mobileAttendance){
+  document.body.classList.add('mobile-attendance');
+  try{
+    const saved=localStorage.getItem(mobileLayoutKey);
+    if(mobileLayouts.some(([key])=>key===saved))mobileLayout=saved;
+  }catch{}
+}
+let data, busy=false, view=mobileAttendance?'tables':'sales', tab='Resumo', category='Açaí', search='', cart={};
 const app=$('#app'), dialog=$('#dialog');
 let timer;
 let selectedTable = null, selectedOpening = null;
@@ -340,7 +351,36 @@ async function identifyBuyer(){
   }catch(error){busy=false;notice(error.message);}
 }
 const tablePaid = t => sum(t.payments, 'amount');
+function mobileTables(){
+  const balance=t=>Math.max(0,tableTotal(t)-tablePaid(t));
+  const pending=t=>Boolean(t.opened&&t.billRequestedAt&&balance(t)>0);
+  const card=t=>{
+    const id=String(t.id).padStart(2,'0');
+    const status=!t.opened?'Livre':pending(t)?'Conta solicitada':!balance(t)&&tableTotal(t)>0?'Quitada':tablePaid(t)>0?'Pagamento parcial':'Ocupada';
+    const state=!t.opened?'free':pending(t)?'partial':'occupied';
+    return '<button type="button" class="mobile-desk '+state+'" data-table="'+esc(t.id)+'">'+
+      '<img src="/img/mesa-praiana.webp" alt=""><strong>Mesa '+esc(id)+'</strong><span class="mobile-desk-state">'+status+'</span>'+
+      (t.opened?'<span>'+esc(t.name||'Sem nome')+' · '+money(balance(t))+'</span>':'')+'</button>';
+  };
+  const grid=(items,visual)=>'<div class="mobile-desk-grid '+visual+'">'+items.map(card).join('')+'</div>';
+  const groups=[['Conta solicitada',data.tables.filter(pending)],['Em atendimento',data.tables.filter(t=>t.opened&&!pending(t))],['Livres',data.tables.filter(t=>!t.opened)]];
+  const grouped=mobileLayout==='queue'||mobileLayout==='combined';
+  return '<section class="mobile-tables"><div class="mobile-table-toolbar"><h1>Mesas</h1><label>Visual <select id="mobile-layout">'+mobileLayouts.map(([key,label])=>
+    '<option value="'+key+'" '+(key===mobileLayout?'selected':'')+'>'+label+'</option>').join('')+'</select></label></div>'+
+    (grouped?groups.filter(([,items])=>items.length).map(([label,items])=>'<h2>'+label+' ('+items.length+')</h2>'+
+      grid(items,mobileLayout==='combined'?'cards':'list')).join(''):grid(data.tables,mobileLayout))+'</section>';
+}
 function tables() {
+  if(mobileAttendance){
+    app.innerHTML=mobileTables();
+    $('#mobile-layout').onchange=event=>{
+      mobileLayout=event.target.value;
+      try{localStorage.setItem(mobileLayoutKey,mobileLayout);}catch{}
+      tables();
+      $('#mobile-layout').focus();
+    };
+    return;
+  }
   app.innerHTML='<section class="table-landscape"><div class="back"><h1>Mesas e comandas</h1><div class="table-map finance-table-map">'+data.tables.map(t=>{
     const total=tableTotal(t), paid=tablePaid(t), balance=Math.max(0,total-paid);
     const settled=t.opened && total>0 && balance===0;
@@ -619,6 +659,7 @@ const salesLayouts=[
 ];
 const salesLayoutKey='casa-rosa:layout-vendas';
 function salesLayout(){
+  if(mobileAttendance)return 'list';
   try{
     const saved=localStorage.getItem(salesLayoutKey);
     return salesLayouts.some(([id])=>id===saved)?saved:'current';
@@ -1001,7 +1042,7 @@ async function exitSystem(){
     const response=await fetch('/sair',{method:'POST'});
     if(!response.ok)throw Error('Não foi possível encerrar a sessão.');
     if(window.chrome?.webview)window.chrome.webview.postMessage('fechar-casa-rosa');
-    else location.replace('/entrar');
+    else location.replace(mobileAttendance?'/entrar?modo=atendimento':'/entrar');
   },'Sim','Não');
   dialog.querySelector('button.primary').focus();
 }

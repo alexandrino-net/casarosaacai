@@ -1,0 +1,15 @@
+{
+  "id": "/atendimento",
+  "name": "Casa Rosa Açaí · Atendimento",
+  "short_name": "Casa Rosa",
+  "start_url": "/atendimento",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "pt-BR",
+  "theme_color": "#54182a",
+  "background_color": "#fff7ee",
+  "icons": [
+    {"src":"/img/atendimento-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"/img/atendimento-512.png","sizes":"512x512","type":"image/png"}
+  ]
+}

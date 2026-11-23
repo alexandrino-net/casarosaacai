@@ -705,3 +705,25 @@ dialog:has(#table-tenders) button.primary:disabled {
 .table-landscape.sale-landscape h1 {
   display:table; padding:6px 12px; border-radius:8px; background:#fffaf4;
 }
+
+.mobile-tables { max-width:560px; margin:auto; padding:16px; }
+.mobile-table-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+.mobile-table-toolbar h1 { margin:0; }
+.mobile-tables h2 { margin:18px 0 8px; font-size:1.15rem; }
+.mobile-desk-grid { display:grid; gap:8px; }
+.mobile-desk-grid.cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.mobile-desk { display:grid; gap:5px; align-items:center; justify-items:center; min-height:48px; padding:8px; background:#fff8ef; border:1px solid #b46a43; border-radius:12px; }
+.mobile-desk img { width:108px; max-width:100%; height:54px; object-fit:contain; }
+.mobile-desk-state { padding:3px 7px; background:#f7d8d3; border-radius:7px; font-weight:700; }
+.mobile-desk.free .mobile-desk-state { background:#dcead5; color:#205536; }
+.mobile-desk.partial .mobile-desk-state { background:#ffe5b2; color:#653a04; }
+.mobile-desk-grid.list img { display:none; }
+.mobile-desk-grid.list .mobile-desk { grid-template-columns:auto auto minmax(0,1fr); text-align:left; justify-items:start; }
+@media(max-width:620px){
+  .mobile-attendance header { flex-wrap:wrap; }
+  .mobile-attendance header nav { width:100%; order:2; }
+  .mobile-attendance #functions { display:none; }
+  .mobile-attendance .comanda-window { max-width:100%; width:100%; max-height:96dvh; }
+  .mobile-attendance .comanda-review-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .mobile-attendance .comanda-review button { min-height:44px; }
+}

@@ -333,7 +333,14 @@ initial.closedTables=[];
 let state = fs.existsSync(database) ? JSON.parse(fs.readFileSync(database, 'utf8')) : initial;
 const staff=require('./staff')(pool,folder,()=>state.sales);
 const creditRules=require('./public/credit');
+const mobileFiles = {
+  '/atendimento.webmanifest':['atendimento.webmanifest','application/manifest+json'],
+  '/img/atendimento-192.png':['img/atendimento-192.png','image/png'],
+  '/img/atendimento-512.png':['img/atendimento-512.png','image/png']
+};
 const files = {
+  ...mobileFiles,
+  '/atendimento':['index.html','text/html'],
   '/img/mesa-praiana.webp': ['img/mesa-praiana.webp', 'image/webp'],
   '/credit.js':['credit.js','text/javascript'],
   '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']
@@ -343,11 +350,17 @@ const access=createAccess(online);
 const checkAccess=require('./permissoes');
 const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
+  const mobile=new URLSearchParams(req.url.split('?')[1]).get('modo')==='atendimento';
+  if(req.method==='GET' && Object.hasOwn(mobileFiles,url)){
+    const [file,type]=mobileFiles[url];
+    res.writeHead(200,{'Content-Type':type});
+    return fs.createReadStream(path.join(__dirname,'public',file)).pipe(res);
+  }
   const origin=process.env.PUBLIC_ORIGIN || 'http://'+req.headers.host;
   const signIn=(status,error='')=>{
     res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
     const palette='body{background-color:#f7ede4;color:#42111d}main{background:#fffbf5;border:1px solid #ad7355}input{border-color:#ad7355;background:#fffdf9}button{background:#581927;border-color:#581927}a{color:#581927}#login-photo-credit{background:#42111d}:focus-visible{outline:3px solid #875039;outline-offset:2px}';
-    res.end(loginPage('/entrar','login',error).replace('</style>',palette+'</style>'));
+    res.end(loginPage(mobile?'/entrar?modo=atendimento':'/entrar','login',error).replace('</style>',palette+'</style>'));
   };
   if(url==='/entrar' && req.method==='GET')return signIn(200);
   if((url==='/entrar'||url==='/sair') && req.method==='POST'){
@@ -358,14 +371,14 @@ const server = http.createServer(async (req, res) => {
       if(!await staff.authenticate(auth))return signIn(401,'Usuário ou senha inválidos.');
       access.start(req,res,auth);
     }catch{return signIn(400,'Não foi possível entrar. Confira os dados e tente novamente.');}
-    res.writeHead(303,{Location:url==='/sair'?'/entrar':'/','Cache-Control':'no-store'});
+    res.writeHead(303,{Location:url==='/sair'?'/entrar':mobile?'/atendimento':'/','Cache-Control':'no-store'});
     return res.end();
   }
   let actor;
   try {actor=await staff.authenticate(req.headers.authorization||access.read(req));}
   catch {res.writeHead(503);return res.end('Banco indisponível.');}
   if (!actor) {
-    if(url==='/' && req.method==='GET'){res.writeHead(303,{Location:'/entrar','Cache-Control':'no-store'});return res.end();}
+    if((url==='/'||url==='/atendimento') && req.method==='GET'){res.writeHead(303,{Location:url==='/atendimento'?'/entrar?modo=atendimento':'/entrar','Cache-Control':'no-store'});return res.end();}
     res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'});
     return res.end(JSON.stringify({error:'Entre novamente para continuar.'}));
   }
