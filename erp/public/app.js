@@ -1409,8 +1409,8 @@ function renderBackProducts(){
   const used=usedProductIds(data);
   for(const item of order())used.add(item.productId||item.id);
   $('#back-product-count').textContent=products.length+' de '+data.products.length+' produto(s)';
-  $('#back-product-list').innerHTML=products.length?table(['Produto','Categoria','Unidade','Estoque','Preço',''],
-    products.map(p=>[esc(p.name),esc(p.category)+(p.subcategory?' / '+esc(p.subcategory):''),p.unit==='kg'?'KG':'UN',
+  $('#back-product-list').innerHTML=products.length?table(['Produto','Código','Categoria','Unidade','Estoque','Preço',''],
+    products.map(p=>[esc(p.name),[...new Set([p.code,p.barcode].map(code=>String(code??'').trim()).filter(Boolean))].map(esc).join('<br>')||'—',esc(p.category)+(p.subcategory?' / '+esc(p.subcategory):''),p.unit==='kg'?'KG':'UN',
       p.stock==null?'—':(p.stock/1000).toLocaleString('pt-BR'),p.variable?'Na venda':missingProductPrice(p)?'Sem preço':money(p.price),
       edit('products',p.id)+' '+frontProductButton(p)+(used.has(p.id)?'':' <button data-delete-product="'+esc(p.id)+'">Excluir</button>')])):'<p>Nenhum produto encontrado.</p>';
 }
