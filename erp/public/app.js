@@ -436,6 +436,40 @@ function openTable(id) {
     enter();
   },'Abrir mesa');
 }
+function sendOrderToTable() {
+  if (view !== 'sales' || saleMode !== 'direct' || selectedTable || !canView('tables')) return;
+  const items = order();
+  if (!items.length) return;
+
+  const destinations = data.tables;
+  if (!destinations.length) {
+    notice('Nenhuma mesa disponível.');
+    return;
+  }
+
+  const label = table => 'Mesa ' + String(table.id).padStart(2, '0');
+  const options = [['', 'Selecione a mesa'], ...destinations.map(table => [
+    table.id,
+    label(table) + (table.opened ? ' · Aberta' : ' · Livre') + (table.name ? ' · ' + table.name : '')
+  ])];
+  const opened = date();
+  const service = counterService;
+  const name = buyer?.name || '';
+  let sentTo;
+  fields('Enviar para mesa', select('Mesa de destino', 'table', options, ''), async values => {
+    const destination = destinations.find(table => table.id === values.table);
+    if (!destination) throw Error('Selecione a mesa de destino.');
+    await save(next => {
+      const table = sameTable(next, destination);
+      if (!table.opened) Object.assign(table, {opened, name, service, billRequestedAt:null});
+      table.items.push(...items);
+    }, true);
+    cart = {};
+    buyer = null;
+    counterService = true;
+    sentTo = label(destination);
+  }, 'Enviar pedido', 'Voltar', () => notice('Pedido enviado para ' + sentTo + '.'));
+}
 function addTableItems() {
   const items = order(), target = tableOrder();
   if (!items.length) return;
@@ -799,7 +833,7 @@ function sales(){
   if(!categories.some(c=>c.name===category)) category=categories[0]?.name||'';
   const lines=order(), total=sum(lines,'total')+serviceCharge(lines,!selectedTable && counterService);
   app.innerHTML=`<div class="pos" data-sale-layout="${layout}"><section class="catalog"><div class="split sale-catalog-heading" hidden></div><div class="sale-modes" aria-label="Modo de venda"><button data-sale-mode="direct" aria-pressed="${!comanda}" class="${!comanda?'active':''}">Venda direta</button><button data-sale-mode="comanda" aria-pressed="${comanda}" class="${comanda?'active':''}">Comandas abertas</button><button class="sale-collect" data-collect>Receber fiado</button></div><div class="sale-search"><label>Código<input id="search" type="search" placeholder="Código ou código*quantidade" aria-label="Código do produto ou código de barras" value="${esc(search)}"></label><div class="sale-name-search"><label>Pesquisar por nome<input id="product-name" type="search" placeholder="Ex.: Coca" role="combobox" aria-autocomplete="list" aria-controls="product-matches" aria-expanded="false" autocomplete="off"></label><ul id="product-matches" role="listbox" aria-label="Produtos encontrados" hidden></ul></div></div>${saleCategoryButtons(categories)}<div id="products" class="grid"></div></section>
-  <aside class="order">${comanda?openComandaCards():`<h2>Pedido atual</h2><button data-identify>${esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')}</button><div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div><button class="primary wide" data-pay="" ${!lines.length||!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div>`}</aside></div>`;
+  <aside class="order">${comanda?openComandaCards():`<h2>Pedido atual</h2><button data-identify>${esc(buyer?buyer.name+' · Alterar':'Cliente ou funcionário')}</button><div class="lines">${lines.map(p=>`<div class="line sale-order-line"><strong title="${esc(p.name)}">${esc(p.name)}</strong><div class="qty"><button data-minus="${esc(p.id)}" aria-label="Remover uma unidade de ${esc(p.name)}">−</button><b>${qtyLabel(p)}</b><button data-add="${esc(p.id)}" aria-label="Adicionar uma unidade de ${esc(p.name)}">+</button></div><span class="sale-line-total">${money(p.total)}</span></div>`).join('')||'<p>Adicione um produto ao pedido.</p>'}</div>${!selectedTable && lines.length?'<button data-fee aria-pressed="'+counterService+'">'+(counterService?'Retirar':'Incluir')+' 10% de serviço</button>':''}<div class="split total"><span>Total</span><span>${money(total)}</span></div>${canView('tables')?'<button type="button" data-send-order-to-table style="border:1px solid currentColor;font-weight:700;margin-bottom:5px" '+(!lines.length?'disabled':'')+'>Enviar para mesa</button>':''}<button class="primary wide" data-pay="" ${!lines.length||!total?'disabled':''}>Receber pagamento</button><div class="payments">${['Pix','Cartão','Dinheiro'].map(m=>`<button data-pay="${m}" ${!total?'disabled':''}>${m}</button>`).join('')}</div>`}</aside></div>`;
   if (selectedTable) {
     const t = tableOrder();
     const catalog=$('.catalog'), orderPanel=$('.order');
@@ -1958,6 +1992,7 @@ document.addEventListener('click',e=>{
   if(d.add)addProduct(d.add);
   if(d.minus)removeItem('cart:'+d.minus);
   if(d.removeSaved!==undefined)removeItem('saved:'+d.removeSaved);
+  if(d.sendOrderToTable!==undefined)sendOrderToTable();
   if(d.fee!==undefined)toggleService();
   if(d.pay!==undefined)payment(d.pay);
   if(button.id==='cash'||d.cash!==undefined)cash();
