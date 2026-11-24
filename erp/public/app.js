@@ -255,7 +255,7 @@ function entry(raw){
   addProduct(product.id,qty);
 }
 function frontProductButton(product){
-  return '<button class="product-position" data-front-product="'+esc(product.id)+'" aria-label="Alterar posição de '+esc(product.name)+'">Ordem no caixa</button>';
+  return '<button type="button" class="product-position" data-front-product="'+esc(product.id)+'" title="Ordem no caixa" aria-label="Alterar posição de '+esc(product.name)+'"><span aria-hidden="true">↕</span></button>';
 }
 function frontProducts(state, category){
   return state.products.filter(p=>p.category===category)
