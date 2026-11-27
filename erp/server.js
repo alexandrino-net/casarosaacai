@@ -350,6 +350,30 @@ const access=createAccess(online);
 const checkAccess=require('./permissoes');
 const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
+  if (url === '/api/monitoramento-central' && req.method === 'GET') {
+    const responder = (status, body) => {
+      res.writeHead(status, {'Content-Type':'application/json','Cache-Control':'no-store'});
+      res.end(JSON.stringify(body));
+    };
+    const token = process.env.CASA_ROSA_MONITOR_TOKEN;
+    if (!pool || !token) return responder(503, {error:'Monitoramento indisponível.'});
+    const digest = value => crypto.createHash('sha256').update(value).digest();
+    if (!crypto.timingSafeEqual(digest(req.headers.authorization || ''), digest('Bearer ' + token)))
+      return responder(401, {error:'Acesso não autorizado.'});
+    try {
+      const {rows: [snapshot]} = await pool.query('SELECT payload FROM casa_rosa_state WHERE id = 1');
+      const {customers, products, sales, rev} = snapshot.payload;
+      return responder(200, {
+        clientes: customers.length,
+        produtos_ativos: products.filter(produto => produto.active !== false).length,
+        vendas_finalizadas: sales.filter(venda => !venda.partial).length,
+        revisao: rev,
+        consultado_em: new Date().toISOString()
+      });
+    } catch {
+      return responder(503, {error:'Indicadores indisponíveis.'});
+    }
+  }
   const mobile=new URLSearchParams(req.url.split('?')[1]).get('modo')==='atendimento';
   if(req.method==='GET' && Object.hasOwn(mobileFiles,url)){
     const [file,type]=mobileFiles[url];
